@@ -38,50 +38,9 @@ jobs:
           version: v2.12.2
           working-directory: tests
 
-  examples-lint:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        example:
-          - atomic-transaction
-          - getting-started
-          - key-expiration
-          - list-and-keys
-          - nats-go-interop
-          - optimistic-concurrency
-          - typed-json
-          - watch-changes
-
-    steps:
-      - name: Cloner
-        uses: actions/checkout@v7
-
-      - name: Installer
-        uses: actions/setup-go@v7
-        with:
-          go-version: 1.26.x
-          cache: true
-
       - name: Example linter
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
-          working-directory: examples/${{ matrix.example }}
-
-  required:
-    name: Required
-    if: ${{ always() }}
-    needs:
-      - ci
-      - examples-lint
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check required jobs
-        env:
-          CI_RESULT: ${{ needs.ci.result }}
-          EXAMPLES_RESULT: ${{ needs.examples-lint.result }}
-        run: |
-          test "$CI_RESULT" = success
-          test "$EXAMPLES_RESULT" = success
+          working-directory: examples
+          experimental: automatic-module-directories
