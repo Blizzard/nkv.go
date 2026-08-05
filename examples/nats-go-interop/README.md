@@ -24,7 +24,7 @@ client can open and use that stream, but a default bucket created by
 
 ## Run it
 
-Start a NATS server with JetStream enabled (version 2.12.0 or newer):
+Start a NATS server with JetStream enabled (version 2.14.0 or newer):
 
 ```bash
 nats-server -js -sd /tmp/nkv-nats-go-interop

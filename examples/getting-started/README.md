@@ -15,7 +15,7 @@ NATS, creating a compatible bucket, and working with an `nkv.Entry`.
 
 ## Run it
 
-This repository requires Go 1.26 and NATS Server 2.12.0 or newer. Start a NATS
+This repository requires Go 1.26 and NATS Server 2.14.0 or newer. Start a NATS
 server with JetStream enabled:
 
 ```bash

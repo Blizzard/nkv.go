@@ -17,7 +17,7 @@ the server discards the complete transaction.
 
 ## Run it
 
-Start a NATS server with JetStream enabled (version 2.12.0 or newer):
+Start a NATS server with JetStream enabled (version 2.14.0 or newer):
 
 ```bash
 nats-server -js -sd /tmp/nkv-atomic-transaction
@@ -47,7 +47,8 @@ The second transaction tries to create the existing `account.alice` key and to
 put `account.carol`. Checking that Carol is missing demonstrates that the
 conflict rejected the whole batch, not only the failing operation.
 
-Atomic batch publish requires NATS Server 2.12.0 or newer.
+Atomic batch publish was introduced in NATS Server 2.12.0; `nkv` supports
+NATS Server 2.14.0 or newer.
 
 ## Explore further
 

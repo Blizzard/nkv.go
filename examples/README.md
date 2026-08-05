@@ -24,7 +24,7 @@ the example closest to the behavior you are building.
 The examples require:
 
 - Go 1.26 or newer;
-- NATS Server 2.12.0 or newer;
+- NATS Server 2.14.0 or newer;
 - JetStream enabled on the server.
 
 Each example README includes a server command with an isolated storage path.

@@ -59,13 +59,14 @@ and the exported API becomes subject to the usual Go compatibility guarantees.
 | | Minimum | Why |
 | --- | --- | --- |
 | Go | 1.26 | Declared in `go.mod`. |
-| [`nats-server`][nats-server] | 2.12.0 | Atomic batch publish. |
+| [`nats-server`][nats-server] | 2.14.0 | Supported and tested server baseline. |
 | [`nats.go`][nats-go] | v1.52.0 | Client support for the above. |
 
 ### Required server features
 
 `CreateBucket` enforces and `Open` requires a stream configuration that enables every
-feature below, so 2.12.0 is a hard floor even if your code never calls the newer APIs.
+feature below. Although the newest required feature was introduced in 2.12.0, `nkv`
+supports NATS Server 2.14.0 and newer.
 
 | Feature | Stream setting / header | Used by | Since |
 | --- | --- | --- | --- |

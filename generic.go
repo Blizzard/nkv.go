@@ -53,7 +53,7 @@ func WithReadCodec(c Codec) GenericOption {
 // WithPrefix sets a key prefix that is automatically prepended (with a dot
 // separator) to all keys in Get/Put/Create/Update/List/Tx operations. Empty
 // prefixes and prefixes containing only dots disable prefixing. Other trailing
-// dots are removed.
+// dots are removed. It panics if the normalized prefix is not a valid key.
 func WithPrefix(prefix string) GenericOption {
 	return func(cfg *genericConfig) {
 		cfg.prefix = normalizePrefix(prefix)
@@ -116,7 +116,9 @@ func (t *Generic[T]) Tx(opts ...TxOption) *GenericTx[T] {
 //
 // If no WithWriteCodec option is provided, JSONCodec() is used as the default.
 // The write codec is registered for read dispatch and used as the fallback
-// for headerless entries unless overridden with WithFallbackCodec.
+// for headerless entries unless overridden with WithFallbackCodec. It panics
+// if any configured codec is incomplete or if two codecs use the same content
+// type.
 func NewGeneric[T any](kv *Bucket, opts ...GenericOption) *Generic[T] {
 	var cfg genericConfig
 

@@ -7,7 +7,7 @@ replace github.com/blizzard/nkv.go => ../
 require (
 	github.com/blizzard/nkv.go v0.0.0-00010101000000-000000000000
 	github.com/matryer/is v1.4.1
-	github.com/nats-io/nats-server/v2 v2.14.4
+	github.com/nats-io/nats-server/v2 v2.14.0
 	github.com/nats-io/nats.go v1.52.0
 )
 
