@@ -51,6 +51,14 @@ comments, commits, code, wiki edits, issues, and other contributions that do not
 with this code of conduct. When appropriate, they will communicate the reasons for
 moderation decisions.
 
+## Reporting
+
+To report a code of conduct violation privately, use GitHub's
+[private reporting form](../../security/advisories/new) and prefix the report title
+with `Code of Conduct:`. Reports are visible only to the reporter and repository
+maintainers. Maintainers will respect the privacy and security of the reporter and
+anyone named in the report.
+
 ## Scope
 
 This code of conduct applies only to participation in this repository, including its
