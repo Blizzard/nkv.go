@@ -1,0 +1,180 @@
+# golangci-lint v2 configuration for standalone example modules.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+  relative-path-mode: gomod
+
+linters:
+  default: all
+  disable:
+    - depguard
+    - err113
+    - exhaustruct
+    - gomodguard
+    - ireturn
+    - lll
+    - nlreturn
+    - noinlineerr
+    - tagliatelle
+    - varnamelen
+    - wsl
+    - wsl_v5
+
+  settings:
+    cyclop:
+      max-complexity: 15
+      package-average: 8
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    exhaustive:
+      default-signifies-exhaustive: false
+
+    funlen:
+      lines: 100
+      statements: 60
+
+    gocognit:
+      min-complexity: 25
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+        - unnamedResult
+        - whyNoLint
+
+    gocyclo:
+      min-complexity: 20
+
+    godot:
+      scope: toplevel
+      capital: true
+
+    gosec:
+      config:
+        G306: "0600"
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    gomodguard_v2:
+      blocked:
+        - module: github.com/nats-io/nats-server/v2
+          reason: Examples connect to an external NATS server.
+        - module: github.com/stretchr/testify
+          reason: Examples are runnable programs, not test suites.
+        - module: github.com/pkg/errors
+          recommendations:
+            - errors
+            - fmt
+          reason: Use standard library error wrapping.
+
+    misspell:
+      locale: US
+
+    mnd:
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+        - "10"
+        - "64"
+
+    nakedret:
+      max-func-lines: 0
+
+    nestif:
+      min-complexity: 5
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation: []
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: error-strings
+        - name: error-return
+        - name: errorf
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: indent-error-flow
+        - name: unexported-return
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: waitgroup-by-value
+
+    staticcheck:
+      checks:
+        - all
+
+    unparam:
+      check-exported: true
+
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+
+  exclusions:
+    generated: strict
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+    rules:
+      # Every example intentionally resolves nkv to this repository checkout.
+      - path: go\.mod
+        linters:
+          - gomoddirectives
+        text: local replacement
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/blizzard/nkv.go
+  exclusions:
+    generated: strict
+    warn-unused: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+  sort-order:
+    - file
+    - linter
+
+severity:
+  default: error

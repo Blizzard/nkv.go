@@ -1,0 +1,195 @@
+# golangci-lint v2 configuration (strict).
+# https://golangci-lint.run/docs/configuration/file/
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+  relative-path-mode: gomod
+
+linters:
+  # Start from everything, then subtract only what is dogmatic or wrong for
+  # this codebase. New linters are opt-out, not opt-in.
+  default: all
+  disable:
+    - depguard # dependency policy enforced by gomodguard_v2 below
+    - err113 # sentinel-error-only policy is too rigid for a client wrapper
+    - exhaustruct # every struct literal would need every field
+    - gomodguard # deprecated since v2.12.0, superseded by gomodguard_v2
+    - ireturn # the options API deliberately returns interfaces
+    - lll # line length is a formatter concern, not a lint failure
+    - nlreturn # pure whitespace opinion
+    - noinlineerr # `if err := f(); err != nil` is idiomatic
+    - tagliatelle # JSON tags mirror the NATS wire format, which is snake_case
+    - varnamelen # short receivers/loop vars are fine
+    - wsl # pure whitespace opinion, superseded by wsl_v5
+    - wsl_v5 # pure whitespace opinion
+
+  settings:
+    cyclop:
+      max-complexity: 15
+      package-average: 8
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    exhaustive:
+      default-signifies-exhaustive: false
+
+    funlen:
+      lines: 100
+      statements: 60
+
+    gocognit:
+      min-complexity: 25
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - hugeParam # measure before churning signatures
+        - rangeValCopy
+        - unnamedResult
+        - whyNoLint
+
+    gocyclo:
+      min-complexity: 20
+
+    godot:
+      scope: toplevel
+      capital: true
+
+    gosec:
+      config:
+        G306: "0600"
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # readability over padding
+
+    # The published module must not grow a dependency tree. Test-only and
+    # server-side packages belong in ./tests. See CONTRIBUTING.md.
+    gomodguard_v2:
+      blocked:
+        - module: github.com/nats-io/nats-server/v2
+          reason: >-
+            The embedded NATS server is a test-only dependency and must stay
+            in the ./tests module.
+        - module: github.com/stretchr/testify
+          reason: Tests use github.com/matryer/is, and live in ./tests.
+        - module: github.com/pkg/errors
+          recommendations:
+            - errors
+            - fmt
+          reason: Use the standard library error wrapping.
+
+    misspell:
+      locale: US
+
+    mnd:
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+        - "10"
+        - "64"
+
+    nakedret:
+      max-func-lines: 0
+
+    nestif:
+      min-complexity: 5
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation: []
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: error-strings
+        - name: error-return
+        - name: errorf
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: indent-error-flow
+        - name: unexported-return
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: waitgroup-by-value
+
+    staticcheck:
+      checks:
+        - all
+
+    unparam:
+      check-exported: true
+
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+
+  exclusions:
+    generated: strict
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+    rules:
+      # Package-level compiled regexps and sentinel errors are intentional.
+      - path: kv\.go
+        linters:
+          - gochecknoglobals
+
+      # Option constructors return concrete unexported types on purpose: one
+      # value satisfies several option interfaces (WithTTL is a PutOption, a
+      # CreateOption, a DeleteOption...). Callers pass them straight through
+      # and never name the type.
+      - path: options\.go
+        linters:
+          - revive
+        text: unexported-return
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/blizzard/nkv.go
+  exclusions:
+    generated: strict
+    warn-unused: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+  sort-order:
+    - file
+    - linter
+
+severity:
+  default: error

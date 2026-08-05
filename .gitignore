@@ -1,0 +1,28 @@
+# Go build and test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Coverage and profiling output
+coverage.*
+*.prof
+
+# Local dependencies and workspace files
+vendor/
+go.work
+go.work.sum
+
+# Editor temporary files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# OS metadata
+.DS_Store
+Thumbs.db

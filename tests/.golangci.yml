@@ -1,0 +1,139 @@
+# golangci-lint v2 configuration for the ./tests module.
+# Standalone: golangci-lint configs do not inherit from parent directories.
+# Same strict baseline as the root config, minus rules that fight test code.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+  relative-path-mode: gomod
+
+linters:
+  default: all
+  disable:
+    - depguard
+    - err113
+    - exhaustruct
+    - gomodguard # deprecated since v2.12.0, superseded by gomodguard_v2
+    - ireturn
+    - nlreturn
+    - noinlineerr
+    - varnamelen
+    - wsl
+    - wsl_v5
+    # Test-suite specific relaxations:
+    - cyclop # table-driven tests are long but flat
+    - dupl # near-identical test bodies are intentional
+    - funlen
+    - gochecknoglobals
+    - gocognit
+    - goconst # bucket/key literals read better inline
+    - gocyclo
+    - lll # test tables carry long literal rows
+    - maintidx
+    - mnd # revisions, counts, and timeouts are literals on purpose
+    - paralleltest # each test owns an embedded server; opt in deliberately
+    - testpackage # already using the nkv_test external package
+    - wrapcheck # tests surface raw errors
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - hugeParam
+        - importShadow # `is := is.New(t)` is the matryer/is idiom
+        - rangeValCopy
+        - unnamedResult
+        - whyNoLint
+
+    godot:
+      scope: toplevel
+      capital: true
+
+    gomoddirectives:
+      # The `replace` pointing at the parent module is the whole point of this module.
+      replace-local: true
+
+    gosec:
+      excludes:
+        - G404 # math/rand is fine for test fixtures
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow # re-declaring `is`/`err` per subtest is idiomatic here
+
+    gomodguard_v2:
+      blocked:
+        - module: github.com/stretchr/testify
+          recommendations:
+            - github.com/matryer/is
+          reason: This suite standardizes on matryer/is.
+        - module: github.com/pkg/errors
+          recommendations:
+            - errors
+            - fmt
+          reason: Use the standard library error wrapping.
+
+    misspell:
+      locale: US
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: var-naming
+        - name: error-strings
+        - name: error-return
+        - name: errorf
+        - name: context-as-argument
+        - name: indent-error-flow
+        - name: unreachable-code
+        - name: waitgroup-by-value
+
+    staticcheck:
+      checks:
+        - all
+
+  exclusions:
+    generated: strict
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/blizzard/nkv.go
+  exclusions:
+    generated: strict
+    warn-unused: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+  sort-order:
+    - file
+    - linter
+
+severity:
+  default: error
