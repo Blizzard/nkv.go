@@ -94,6 +94,114 @@ func TestWatchUpdatesOnly(t *testing.T) {
 	is.Equal(entry.Revision, revision)     // updates-only watch should deliver the new revision
 }
 
+func TestWatchFromRevision(t *testing.T) {
+	type wantEntry struct {
+		key      string
+		revision uint64
+	}
+
+	tests := []struct {
+		name            string
+		bucket          string
+		pattern         string
+		options         []nkv.WatchOption
+		want            []wantEntry
+		wantInitialDone bool
+		wantSentinel    bool
+	}{
+		{
+			name:    "inclusive revision",
+			bucket:  "WATCH_REVISION",
+			pattern: ">",
+			options: []nkv.WatchOption{nkv.WithRevision(2)},
+			want: []wantEntry{
+				{key: "users.alice", revision: 2},
+				{key: "ignored.middle", revision: 3},
+				{key: "config.theme", revision: 4},
+			},
+			wantSentinel: true,
+		},
+		{
+			name:    "filtered global revision",
+			bucket:  "WATCH_REVISION_FILTERED",
+			pattern: "users.>",
+			options: []nkv.WatchOption{nkv.WithRevision(2), nkv.WithAdditionalKeys("config.>")},
+			want: []wantEntry{
+				{key: "users.alice", revision: 2},
+				{key: "config.theme", revision: 4},
+			},
+			wantSentinel: true,
+		},
+		{
+			name:    "zero keeps default replay",
+			bucket:  "WATCH_REVISION_ZERO",
+			pattern: ">",
+			options: []nkv.WatchOption{nkv.WithRevision(0)},
+			want: []wantEntry{
+				{key: "ignored.before", revision: 1},
+				{key: "users.alice", revision: 2},
+				{key: "ignored.middle", revision: 3},
+				{key: "config.theme", revision: 4},
+			},
+			wantSentinel: true,
+		},
+		{
+			name:    "updates only resumes without sentinel",
+			bucket:  "WATCH_REVISION_UPDATES",
+			pattern: ">",
+			options: []nkv.WatchOption{nkv.WithUpdatesOnly(), nkv.WithRevision(2)},
+			want: []wantEntry{
+				{key: "users.alice", revision: 2},
+				{key: "ignored.middle", revision: 3},
+				{key: "config.theme", revision: 4},
+			},
+			wantInitialDone: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
+			is.NoErr(err) // bucket creation should succeed
+
+			fixtures := []struct {
+				key   string
+				value string
+			}{
+				{key: "ignored.before", value: "one"},
+				{key: "users.alice", value: "two"},
+				{key: "ignored.middle", value: "three"},
+				{key: "config.theme", value: "four"},
+			}
+			for _, fixture := range fixtures {
+				_, err := kv.Put(t.Context(), fixture.key, []byte(fixture.value))
+				is.NoErr(err) // revision fixture put should succeed
+			}
+
+			watcher, err := kv.Watch(t.Context(), test.pattern, test.options...)
+			is.NoErr(err) // revision watch creation should succeed
+			t.Cleanup(watcher.Stop)
+			is.Equal(watcher.InitialDone(), test.wantInitialDone) // initial state should match the selected watch mode
+
+			for _, want := range test.want {
+				entry, err := nextWatch(t, watcher)
+				is.NoErr(err)                           // revision replay should not fail
+				is.Equal(entry.Key, want.key)           // revision replay should respect stream order and filters
+				is.Equal(entry.Revision, want.revision) // revision replay should start inclusively
+			}
+
+			if test.wantSentinel {
+				entry, err := nextWatch(t, watcher)
+				is.NoErr(err)                  // revision replay sentinel should not fail
+				is.True(entry == nil)          // revision replay should end with a nil sentinel
+				is.True(watcher.InitialDone()) // revision replay should be complete after the sentinel
+			}
+		})
+	}
+}
+
 func TestWatchFilters(t *testing.T) {
 	is := is.New(t)
 	nc := testConnection(t)

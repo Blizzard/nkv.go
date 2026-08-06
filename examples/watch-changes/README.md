@@ -9,9 +9,9 @@ live update.
 An `nkv` watch has two phases:
 
 1. **Initial replay:** by default, the latest value for every matching key is
-	delivered first. This lets an application build its current in-memory view.
+ delivered first. This lets an application build its current in-memory view.
 2. **Live updates:** `Watcher.Next` returns `(nil, nil)` once to mark the replay
-	boundary. Subsequent calls block for new matching revisions.
+ boundary. Subsequent calls block for new matching revisions.
 
 The watcher is backed by a pull-based ordered consumer. Calls to `Next` control
 the rate of delivery, providing natural backpressure when processing is slower
@@ -41,8 +41,8 @@ NATS_URL=nats://example-host:4222 go run .
 
 ```text
 initial values:
-	config.color="blue"
-	config.size="medium"
+ config.color="blue"
+ config.size="medium"
 live update: config.color="green" at revision 3
 ```
 
@@ -56,6 +56,8 @@ so it cannot be mistaken for an initial value.
 ## Explore further
 
 - Add `nkv.WithUpdatesOnly()` to skip the initial replay.
+- Add `nkv.WithRevision(revision)` to resume inclusively from a known stream
+ revision after an interruption.
 - Use `nkv.WithAdditionalKeys("feature.>")` to watch several key spaces with
-	one consumer.
+ one consumer.
 - Replace calls to `Next` with the `Updates` channel adapter.
