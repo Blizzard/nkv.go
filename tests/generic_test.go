@@ -1,6 +1,7 @@
 package nkv_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -284,4 +285,132 @@ func TestGenericListPinsSnapshotAtCallTime(t *testing.T) {
 		names = append(names, value.Name)
 	}
 	is.Equal(names, []string{"before"}) // typed list should exclude writes after the call
+}
+
+func TestGenericDeleteAndPurge(t *testing.T) {
+	type record struct{ Name string }
+	tests := []struct {
+		name          string
+		bucket        string
+		run           func(context.Context, *nkv.Generic[record], uint64) error
+		wantOperation nkv.Operation
+		wantTTL       string
+	}{
+		{
+			name:   "delete",
+			bucket: "GENERIC_DELETE",
+			run: func(ctx context.Context, typed *nkv.Generic[record], revision uint64) error {
+				return typed.Delete(ctx, "alice", nkv.WithRevision(revision), nkv.WithTTL(time.Minute))
+			},
+			wantOperation: nkv.OpDelete,
+			wantTTL:       "1m0s",
+		},
+		{
+			name:   "purge",
+			bucket: "GENERIC_PURGE",
+			run: func(ctx context.Context, typed *nkv.Generic[record], _ uint64) error {
+				return typed.Purge(ctx, "alice", nkv.WithTTL(2*time.Minute))
+			},
+			wantOperation: nkv.OpPurge,
+			wantTTL:       "2m0s",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
+			is.NoErr(err) // bucket creation should succeed
+			typed := nkv.NewGeneric[record](bucket, nkv.WithPrefix("users"))
+			revision, err := typed.Put(t.Context(), "alice", record{Name: "Alice"})
+			is.NoErr(err) // typed fixture put should succeed
+			watcher, err := typed.Watch(t.Context(), "*", nkv.WithUpdatesOnly())
+			is.NoErr(err) // typed watch creation should succeed
+			t.Cleanup(watcher.Stop)
+
+			is.NoErr(test.run(t.Context(), typed, revision)) // typed removal should succeed
+			entry, err := watcher.Next()
+			is.NoErr(err)                                 // typed watch should deliver the tombstone
+			is.Equal(entry.Key, "alice")                  // typed watch should remove the configured prefix
+			is.Equal(entry.Operation, test.wantOperation) // typed watch should preserve operation metadata
+			is.Equal(entry.Value, record{})               // tombstones should have the typed zero value
+			message := lastRawMessage(t, nc, bucket, "users.alice")
+			is.Equal(message.Header.Get("Nats-TTL"), test.wantTTL) // removal options should reach the bucket
+			_, err = bucket.Get(t.Context(), "alice")
+			is.True(errors.Is(err, nkv.ErrKeyNotFound)) // typed removal should not affect an unprefixed key
+		})
+	}
+}
+
+func TestGenericWatch(t *testing.T) {
+	type record struct{ Name string }
+	tests := []struct {
+		name         string
+		bucket       string
+		options      []nkv.WatchOption
+		before       map[string]record
+		after        map[string]record
+		want         map[string]record
+		wantSentinel bool
+		wantMetaOnly bool
+	}{
+		{
+			name:         "decoded replay and additional filters",
+			bucket:       "GENERIC_WATCH_REPLAY",
+			options:      []nkv.WatchOption{nkv.WithAdditionalKeys("config.*"), nkv.WithPullBatch(1)},
+			before:       map[string]record{"users.alice": {Name: "Alice"}, "config.theme": {Name: "Dark"}, "ignored.key": {Name: "Ignored"}},
+			want:         map[string]record{"users.alice": {Name: "Alice"}, "config.theme": {Name: "Dark"}},
+			wantSentinel: true,
+		},
+		{
+			name:         "metadata-only live update",
+			bucket:       "GENERIC_WATCH_META",
+			options:      []nkv.WatchOption{nkv.WithUpdatesOnly(), nkv.WithMetaOnly()},
+			after:        map[string]record{"users.alice": {Name: "Alice"}},
+			want:         map[string]record{"users.alice": {}},
+			wantMetaOnly: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
+			is.NoErr(err) // bucket creation should succeed
+			typed := nkv.NewGeneric[record](bucket, nkv.WithPrefix("scope"))
+			for key, value := range test.before {
+				_, err := typed.Put(t.Context(), key, value)
+				is.NoErr(err) // replay fixture put should succeed
+			}
+
+			watcher, err := typed.Watch(t.Context(), "users.*", test.options...)
+			is.NoErr(err) // typed watch creation should succeed
+			t.Cleanup(watcher.Stop)
+			for key, value := range test.after {
+				_, err := typed.Put(t.Context(), key, value)
+				is.NoErr(err) // live fixture put should succeed
+			}
+
+			got := make(map[string]record, len(test.want))
+			for range test.want {
+				entry, err := watcher.Next()
+				is.NoErr(err)                        // typed watch delivery should succeed
+				is.Equal(entry.Operation, nkv.OpPut) // typed watch should preserve put metadata
+				if test.wantMetaOnly {
+					is.Equal(len(entry.Entry.Value), 0) // metadata-only watch should omit encoded bytes
+				}
+				got[entry.Key] = entry.Value
+			}
+			is.Equal(got, test.want) // typed watch should decode only matching entries
+
+			if test.wantSentinel {
+				entry, err := watcher.Next()
+				is.NoErr(err)                  // replay sentinel should not fail
+				is.True(entry == nil)          // typed watcher should preserve the replay sentinel
+				is.True(watcher.InitialDone()) // typed watcher should expose replay state
+			}
+		})
+	}
 }
