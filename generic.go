@@ -81,9 +81,7 @@ func WithDefaultTTL(ttl time.Duration) GenericOption {
 	}
 }
 
-// Generic wraps a Bucket with a codec for type-safe Get/Put/Create/Update/List.
-// It covers only the core data-path operations - bucket lifecycle (Status,
-// Watch, Tx) stays on the underlying Bucket.
+// Generic wraps a Bucket with a codec for type-safe data operations.
 //
 // The write codec is used for all encode operations and its ContentType is
 // stamped into the Content-Type header. On reads, the Content-Type header
@@ -96,6 +94,21 @@ type Generic[T any] struct {
 	codecs     map[string]Codec // content-type -> codec
 	prefix     string           // prepended to keys (includes trailing dot)
 	defaultTTL time.Duration    // applied to writes when no WithTTL is specified
+}
+
+// GenericEntry is a watched entry with its value decoded as T. Entry retains
+// the operation metadata and raw encoded value. Tombstones and metadata-only
+// entries have the zero value of T.
+type GenericEntry[T any] struct {
+	Entry
+	Value T
+}
+
+// GenericWatcher decodes entries delivered by a Watcher as T.
+type GenericWatcher[T any] struct {
+	watcher  *Watcher
+	generic  *Generic[T]
+	metaOnly bool
 }
 
 // Bucket returns the underlying Bucket.
@@ -236,6 +249,96 @@ func (t *Generic[T]) Update(ctx context.Context, key string, value T, rev uint64
 	opts = append(opts, WithHeaders(nats.Header{hdrContentType: []string{t.codec.ContentType}}))
 
 	return t.kv.Update(ctx, t.prefix+key, data, rev, opts...)
+}
+
+// Delete writes a delete tombstone for key.
+func (t *Generic[T]) Delete(ctx context.Context, key string, opts ...DeleteOption) error {
+	return t.kv.Delete(ctx, t.prefix+key, opts...)
+}
+
+// Purge writes a purge tombstone and removes prior revisions of key.
+func (t *Generic[T]) Purge(ctx context.Context, key string, opts ...PurgeOption) error {
+	return t.kv.Purge(ctx, t.prefix+key, opts...)
+}
+
+// Watch starts a typed watcher for entries matching pattern.
+func (t *Generic[T]) Watch(ctx context.Context, pattern string, opts ...WatchOption) (*GenericWatcher[T], error) {
+	var configured watchOpts
+	for _, opt := range opts {
+		opt.applyWatch(&configured)
+	}
+
+	watcher, err := t.kv.Watch(ctx, t.prefix+pattern, append(opts, prefixWatchFilters(t.prefix))...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GenericWatcher[T]{watcher: watcher, generic: t, metaOnly: configured.headersOnly}, nil
+}
+
+// Next blocks until the next typed entry is available. It returns nil, nil at
+// the end of the initial replay, matching Watcher.Next.
+func (w *GenericWatcher[T]) Next() (*GenericEntry[T], error) {
+	entry, err := w.watcher.Next()
+	if err != nil || entry == nil {
+		return nil, err
+	}
+
+	typed := &GenericEntry[T]{Entry: *entry}
+	typed.Entry.Key = strings.TrimPrefix(entry.Key, w.generic.prefix)
+	if entry.IsTombstone() || w.metaOnly {
+		return typed, nil
+	}
+
+	typed.Value, err = w.generic.decodeValue(entry)
+	if err != nil {
+		return nil, err
+	}
+
+	return typed, nil
+}
+
+// InitialDone reports whether the initial replay has completed.
+func (w *GenericWatcher[T]) InitialDone() bool {
+	return w.watcher.InitialDone()
+}
+
+// Stop tears down the watcher and its underlying consumer.
+func (w *GenericWatcher[T]) Stop() {
+	w.watcher.Stop()
+}
+
+// Updates returns a channel adapter around the typed watcher. A nil entry
+// signals the end of the initial replay.
+func (w *GenericWatcher[T]) Updates() <-chan *GenericEntry[T] {
+	ch := make(chan *GenericEntry[T], updatesChanBuffer)
+
+	go func() {
+		defer close(ch)
+
+		for {
+			entry, err := w.Next()
+			if err != nil {
+				return
+			}
+
+			select {
+			case ch <- entry:
+			case <-w.watcher.done:
+				return
+			}
+		}
+	}()
+
+	return ch
+}
+
+type prefixWatchFilters string
+
+func (prefix prefixWatchFilters) applyWatch(opts *watchOpts) {
+	for i, filter := range opts.extraFilters {
+		opts.extraFilters[i] = string(prefix) + filter
+	}
 }
 
 // List returns a typed iterator over values matching the pattern.
