@@ -29,18 +29,20 @@ var ErrWatcherStopped = errors.New("kv: watcher stopped")
 // Backpressure is native: the client pulls what it can process. No push
 // delivery, no connection-level slow consumer risk.
 type Watcher struct {
-	bucket   *Bucket
-	cons     jetstream.Consumer
-	iter     jetstream.MessagesContext
-	nextMu   sync.Mutex
-	stateMu  sync.RWMutex
-	initial  bool // true while initial replay is in-flight
-	sentinel bool // true when the initial replay sentinel is pending
-	pending  uint64
-	received uint64
-	cancel   context.CancelFunc
-	done     <-chan struct{}
-	stopOnce sync.Once
+	bucket      *Bucket
+	cons        jetstream.Consumer
+	iter        jetstream.MessagesContext
+	nextMu      sync.Mutex
+	stateMu     sync.RWMutex
+	initial     bool // true while initial replay is in-flight
+	sentinel    bool // true when the initial replay sentinel is pending
+	pending     uint64
+	received    uint64
+	cancel      context.CancelFunc
+	done        <-chan struct{}
+	stopOnce    sync.Once
+	updatesOnce sync.Once
+	updates     chan *Entry
 }
 
 // Watch starts a pull-ordered-consumer-backed watcher on the given key
@@ -219,31 +221,32 @@ func (b *Bucket) WatchAll(ctx context.Context, opts ...WatchOption) (*Watcher, e
 }
 
 // Updates returns a channel adapter around the pull-based watcher for callers
-// that prefer channel semantics. Multiple adapters and concurrent Next calls
-// share one delivery stream; each entry is sent to exactly one consumer. The
+// that prefer channel semantics. Repeated calls return the same channel. The
 // channel closes when the watcher is stopped or the context is canceled. A nil
 // *Entry signals end of initial replay.
 func (w *Watcher) Updates() <-chan *Entry {
-	ch := make(chan *Entry, updatesChanBuffer)
+	w.updatesOnce.Do(func() {
+		w.updates = make(chan *Entry, updatesChanBuffer)
 
-	go func() {
-		defer close(ch)
+		go func() {
+			defer close(w.updates)
 
-		for {
-			entry, err := w.Next()
-			if err != nil {
-				return
+			for {
+				entry, err := w.Next()
+				if err != nil {
+					return
+				}
+
+				select {
+				case w.updates <- entry:
+				case <-w.done:
+					return
+				}
 			}
+		}()
+	})
 
-			select {
-			case ch <- entry:
-			case <-w.done:
-				return
-			}
-		}
-	}()
-
-	return ch
+	return w.updates
 }
 
 // entryFromJSMsg decodes a consumed stream message (watch path) into an Entry.

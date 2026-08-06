@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -107,9 +108,11 @@ type GenericEntry[T any] struct {
 
 // GenericWatcher decodes entries delivered by a Watcher as T.
 type GenericWatcher[T any] struct {
-	watcher  *Watcher
-	generic  *Generic[T]
-	metaOnly bool
+	watcher     *Watcher
+	generic     *Generic[T]
+	metaOnly    bool
+	updatesOnce sync.Once
+	updates     chan *GenericEntry[T]
 }
 
 // Bucket returns the underlying Bucket.
@@ -309,29 +312,31 @@ func (w *GenericWatcher[T]) Stop() {
 	w.watcher.Stop()
 }
 
-// Updates returns a channel adapter around the typed watcher. A nil entry
-// signals the end of the initial replay.
+// Updates returns a channel adapter around the typed watcher. Repeated calls
+// return the same channel. A nil entry signals the end of the initial replay.
 func (w *GenericWatcher[T]) Updates() <-chan *GenericEntry[T] {
-	ch := make(chan *GenericEntry[T], updatesChanBuffer)
+	w.updatesOnce.Do(func() {
+		w.updates = make(chan *GenericEntry[T], updatesChanBuffer)
 
-	go func() {
-		defer close(ch)
+		go func() {
+			defer close(w.updates)
 
-		for {
-			entry, err := w.Next()
-			if err != nil {
-				return
+			for {
+				entry, err := w.Next()
+				if err != nil {
+					return
+				}
+
+				select {
+				case w.updates <- entry:
+				case <-w.watcher.done:
+					return
+				}
 			}
+		}()
+	})
 
-			select {
-			case ch <- entry:
-			case <-w.watcher.done:
-				return
-			}
-		}
-	}()
-
-	return ch
+	return w.updates
 }
 
 type prefixWatchFilters string
