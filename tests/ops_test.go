@@ -243,6 +243,50 @@ func TestDeleteEdgeCases(t *testing.T) {
 	}
 }
 
+func TestPurgeEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		bucket      string
+		put         bool
+		options     []nkv.PurgeOption
+		wantErr     error
+		wantMissing bool
+	}{
+		{name: "current revision", bucket: "PURGE_CURRENT", put: true, options: []nkv.PurgeOption{nkv.WithRevision(1)}, wantMissing: true},
+		{name: "stale revision", bucket: "PURGE_STALE", put: true, options: []nkv.PurgeOption{nkv.WithRevision(2)}, wantErr: nkv.ErrRevisionMismatch},
+		{name: "missing with revision", bucket: "PURGE_MISSING_CAS", options: []nkv.PurgeOption{nkv.WithRevision(1)}, wantErr: nkv.ErrRevisionMismatch, wantMissing: true},
+		{name: "missing unconditional", bucket: "PURGE_MISSING", wantMissing: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
+			is.NoErr(err) // bucket creation should succeed
+			if test.put {
+				_, err = kv.Put(t.Context(), "key", []byte("value"))
+				is.NoErr(err) // test value setup should succeed
+			}
+
+			err = kv.Purge(t.Context(), "key", test.options...)
+			if test.wantErr != nil {
+				is.True(errors.Is(err, test.wantErr)) // purge should return the expected CAS error
+			} else {
+				is.NoErr(err) // valid purge should succeed
+			}
+
+			entry, getErr := kv.Get(t.Context(), "key")
+			if test.wantMissing {
+				is.True(errors.Is(getErr, nkv.ErrKeyNotFound)) // purged or absent key should not be found
+				return
+			}
+			is.NoErr(getErr)                       // failed CAS purge should preserve the key
+			is.Equal(string(entry.Value), "value") // failed CAS purge should preserve the value
+		})
+	}
+}
+
 func TestOperationsRespectCanceledContext(t *testing.T) {
 	tests := []struct {
 		name string

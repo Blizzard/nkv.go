@@ -57,11 +57,12 @@ func TestWriteOptions(t *testing.T) {
 			return kv.Delete(ctx, key, nkv.WithRevision(revision), nkv.WithTTL(5*time.Minute), nkv.WithHeaders(headers))
 		}, wantOperation: "DEL", wantExpectedSeq: "1"},
 		{name: "purge", bucket: "OPTIONS_PURGE", key: "purge", run: func(ctx context.Context, kv *nkv.Bucket, key string, headers nats.Header) error {
-			if _, err := kv.Put(ctx, key, []byte("before")); err != nil {
+			revision, err := kv.Put(ctx, key, []byte("before"))
+			if err != nil {
 				return err
 			}
-			return kv.Purge(ctx, key, nkv.WithTTL(5*time.Minute), nkv.WithHeaders(headers))
-		}, wantOperation: "PURGE", wantRollup: "sub"},
+			return kv.Purge(ctx, key, nkv.WithRevision(revision), nkv.WithTTL(5*time.Minute), nkv.WithHeaders(headers))
+		}, wantOperation: "PURGE", wantRollup: "sub", wantExpectedSeq: "1"},
 	}
 
 	for _, test := range tests {

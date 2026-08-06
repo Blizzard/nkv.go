@@ -38,8 +38,9 @@ type deleteOpts struct {
 }
 
 type purgeOpts struct {
-	ttl     time.Duration
-	headers nats.Header
+	ttl              time.Duration
+	expectedRevision uint64
+	headers          nats.Header
 }
 
 type listOpts struct {
@@ -154,13 +155,17 @@ func (r revisionOption) applyDelete(o *deleteOpts) {
 	o.expectedRevision = uint64(r)
 }
 
+func (r revisionOption) applyPurge(o *purgeOpts) {
+	o.expectedRevision = uint64(r)
+}
+
 func (r revisionOption) applyWatch(o *watchOpts) {
 	o.revision = uint64(r)
 }
 
 // WithRevision targets a specific revision. On Get it fetches that exact
-// revision; on Delete it makes the delete conditional on the key's latest
-// revision matching (CAS delete); on Watch it resumes inclusively from that
+// revision; on Delete and Purge it makes the operation conditional on the
+// key's latest revision matching; on Watch it resumes inclusively from that
 // stream revision.
 func WithRevision(rev uint64) revisionOption {
 	return revisionOption(rev)
