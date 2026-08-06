@@ -464,3 +464,35 @@ func TestGenericWatch(t *testing.T) {
 		})
 	}
 }
+
+func TestGenericWatchUpdatesChannel(t *testing.T) {
+	tests := []struct {
+		name   string
+		bucket string
+	}{
+		{name: "repeated calls", bucket: "GENERIC_WATCH_CHANNEL"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
+			is.NoErr(err) // bucket creation should succeed
+			typed := nkv.NewGeneric[string](bucket)
+			watcher, err := typed.Watch(t.Context(), ">", nkv.WithUpdatesOnly())
+			is.NoErr(err) // typed watch creation should succeed
+
+			updates := watcher.Updates()
+			is.Equal(watcher.Updates(), updates) // repeated calls should reuse the same channel
+			watcher.Stop()
+
+			select {
+			case _, open := <-updates:
+				is.True(!open) // updates channel should close after the watcher stops
+			case <-time.After(2 * time.Second):
+				is.True(false) // updates channel should promptly close after stop
+			}
+		})
+	}
+}

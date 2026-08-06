@@ -366,6 +366,7 @@ func TestWatchUpdatesChannel(t *testing.T) {
 	watcher, err := kv.WatchAll(t.Context())
 	is.NoErr(err) // watch creation should succeed
 	updates := watcher.Updates()
+	is.Equal(watcher.Updates(), updates) // repeated calls should reuse the same channel
 
 	select {
 	case entry, open := <-updates:
