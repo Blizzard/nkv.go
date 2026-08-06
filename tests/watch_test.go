@@ -31,13 +31,16 @@ func TestWatchInitialReplayAndLiveUpdates(t *testing.T) {
 	is.True(!watcher.InitialDone()) // initial replay should start incomplete
 
 	replayed := make(map[string]string)
+	deltas := make([]uint64, 0, 2)
 	for !watcher.InitialDone() {
 		entry, err := nextWatch(t, watcher)
 		is.NoErr(err)         // initial replay should not fail
 		is.True(entry != nil) // initial replay should return an entry before its sentinel
 		replayed[entry.Key] = string(entry.Value)
+		deltas = append(deltas, entry.Delta)
 	}
 	is.Equal(replayed, map[string]string{"alpha": "one", "beta": "two"}) // replay should contain each current key
+	is.Equal(deltas, []uint64{1, 0})                                     // replay delta should count entries still pending
 
 	entry, err := nextWatch(t, watcher)
 	is.NoErr(err)         // initial replay sentinel should not return an error
@@ -50,6 +53,7 @@ func TestWatchInitialReplayAndLiveUpdates(t *testing.T) {
 	is.Equal(entry.Key, "gamma")           // watcher should deliver the live key
 	is.Equal(string(entry.Value), "three") // watcher should deliver the live value
 	is.Equal(entry.Revision, revision)     // watcher should deliver the live revision
+	is.Equal(entry.Delta, uint64(0))       // live update should have no pending entries
 }
 
 func TestWatchEmptyBucketReplay(t *testing.T) {

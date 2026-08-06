@@ -85,6 +85,7 @@ type Entry struct {
 	Key         string
 	Value       []byte
 	Revision    uint64 // stream sequence of this revision
+	Delta       uint64 // messages after this entry in the delivery sequence
 	Created     time.Time
 	Operation   Operation
 	ContentType string // MIME type from Content-Type header, empty if absent
@@ -119,6 +120,10 @@ func (b *Bucket) entryFromDirectMsg(msg *nats.Msg) (*Entry, error) {
 	if err != nil {
 		return nil, errors.New("kv: direct get response missing Nats-Sequence")
 	}
+	delta, err := strconv.ParseUint(msg.Header.Get(hdrNumPending), 10, 64)
+	if err != nil {
+		delta = 0
+	}
 
 	// A malformed or absent timestamp yields the zero time rather than an error.
 	ts, err := time.Parse(time.RFC3339Nano, msg.Header.Get(hdrTimestamp))
@@ -131,6 +136,7 @@ func (b *Bucket) entryFromDirectMsg(msg *nats.Msg) (*Entry, error) {
 		Key:         b.key(msg.Header.Get(hdrSubject)),
 		Value:       msg.Data,
 		Revision:    seq,
+		Delta:       delta,
 		Created:     ts,
 		Operation:   opFromHeader(msg.Header),
 		ContentType: msg.Header.Get(hdrContentType),

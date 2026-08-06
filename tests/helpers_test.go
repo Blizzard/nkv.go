@@ -20,6 +20,7 @@ type entryWant struct {
 	key       string
 	value     string
 	revision  uint64
+	delta     uint64
 	operation nkv.Operation
 }
 
@@ -44,6 +45,7 @@ func assertEntry(t *testing.T, got *nkv.Entry, want entryWant) {
 	is.Equal(got.Key, want.key)             // entry should report the expected key
 	is.Equal(string(got.Value), want.value) // entry should contain the expected value
 	is.Equal(got.Revision, want.revision)   // entry should report the expected revision
+	is.Equal(got.Delta, want.delta)         // entry should report the expected delivery delta
 	is.Equal(got.Operation, want.operation) // entry should report the expected operation
 	is.True(!got.Created.IsZero())          // entry should include its creation time
 }
