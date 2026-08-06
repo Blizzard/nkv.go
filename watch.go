@@ -45,7 +45,9 @@ type Watcher struct {
 
 // Watch starts a pull-ordered-consumer-backed watcher on the given key
 // pattern (e.g. "users.>" or "config.*"). After the initial replay of
-// current state completes, Next returns live updates.
+// current state completes, Next returns live updates. WithRevision resumes
+// inclusively from the given stream revision instead of replaying current
+// state.
 //
 // The caller must call Stop when done. Unlike the nats.go KV Watch, the
 // underlying consumer is pull-based: stalls do not slow-consumer the
@@ -76,10 +78,14 @@ func (b *Bucket) Watch(ctx context.Context, pattern string, opts ...WatchOption)
 	if o.updatesOnly {
 		deliver = jetstream.DeliverNewPolicy
 	}
+	if o.revision > 0 {
+		deliver = jetstream.DeliverByStartSequencePolicy
+	}
 
 	cfg := jetstream.OrderedConsumerConfig{
 		FilterSubjects:    filters,
 		DeliverPolicy:     deliver,
+		OptStartSeq:       o.revision,
 		InactiveThreshold: o.inactive,
 		HeadersOnly:       o.headersOnly,
 	}
