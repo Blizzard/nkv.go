@@ -101,6 +101,7 @@ type Generic[T any] struct {
 // entries have the zero value of T.
 type GenericEntry[T any] struct {
 	Entry
+
 	Value T
 }
 
@@ -285,7 +286,7 @@ func (w *GenericWatcher[T]) Next() (*GenericEntry[T], error) {
 	}
 
 	typed := &GenericEntry[T]{Entry: *entry}
-	typed.Entry.Key = strings.TrimPrefix(entry.Key, w.generic.prefix)
+	typed.Key = strings.TrimPrefix(entry.Key, w.generic.prefix)
 	if entry.IsTombstone() || w.metaOnly {
 		return typed, nil
 	}
