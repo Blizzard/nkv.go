@@ -376,6 +376,19 @@ func (t *Generic[T]) List(ctx context.Context, pattern string, opts ...ListOptio
 	}
 }
 
+// Keys returns an iterator over keys matching the pattern.
+func (t *Generic[T]) Keys(ctx context.Context, pattern string, opts ...KeysOption) iter.Seq2[string, error] {
+	keys := t.kv.Keys(ctx, t.prefix+pattern, opts...)
+
+	return func(yield func(string, error) bool) {
+		for key, err := range keys {
+			if !yield(strings.TrimPrefix(key, t.prefix), err) {
+				return
+			}
+		}
+	}
+}
+
 // decodeValue selects the appropriate codec based on the entry's Content-Type
 // header and decodes the value.
 func (t *Generic[T]) decodeValue(entry *Entry) (T, error) {

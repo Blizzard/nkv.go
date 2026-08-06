@@ -287,6 +287,56 @@ func TestGenericListPinsSnapshotAtCallTime(t *testing.T) {
 	is.Equal(names, []string{"before"}) // typed list should exclude writes after the call
 }
 
+func TestGenericKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		bucket  string
+		prefix  string
+		pattern string
+		keys    []string
+		want    []string
+	}{
+		{
+			name:    "prefixed",
+			bucket:  "GENERIC_KEYS_PREFIXED",
+			prefix:  "users",
+			pattern: "*",
+			keys:    []string{"alice", "bob"},
+			want:    []string{"alice", "bob"},
+		},
+		{
+			name:    "pattern",
+			bucket:  "GENERIC_KEYS_PATTERN",
+			pattern: "users.*",
+			keys:    []string{"users.alice", "config.region"},
+			want:    []string{"users.alice"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
+			is.NoErr(err) // bucket creation should succeed
+			typed := nkv.NewGeneric[string](bucket, nkv.WithPrefix(test.prefix))
+
+			for _, key := range test.keys {
+				_, err := typed.Put(t.Context(), key, key)
+				is.NoErr(err) // typed fixture put should succeed
+			}
+
+			keys := make([]string, 0)
+			for key, err := range typed.Keys(t.Context(), test.pattern, nkv.WithListBatch(1)) {
+				is.NoErr(err) // typed key iteration should succeed
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			is.Equal(keys, test.want) // keys should match the pattern without the configured prefix
+		})
+	}
+}
+
 func TestGenericDeleteAndPurge(t *testing.T) {
 	type record struct{ Name string }
 	tests := []struct {
