@@ -40,6 +40,7 @@ func TestKeyValueBasics(t *testing.T) {
 		key:       "name",
 		value:     "derek",
 		revision:  1,
+		delta:     0,
 		operation: nkv.OpPut,
 	})
 

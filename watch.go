@@ -254,6 +254,7 @@ func (b *Bucket) entryFromJSMsg(msg jetstream.Msg) (*Entry, error) {
 		Key:         b.key(msg.Subject()),
 		Value:       msg.Data(),
 		Revision:    md.Sequence.Stream,
+		Delta:       md.NumPending,
 		Created:     md.Timestamp,
 		Operation:   opFromHeader(hdrs),
 		ContentType: hdrs.Get(hdrContentType),

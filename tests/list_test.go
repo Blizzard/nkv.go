@@ -161,6 +161,38 @@ func TestListPaginationDoesNotCreateConsumers(t *testing.T) {
 	is.Equal(after.State.Consumers, 0) // direct get listing should not create consumers
 }
 
+func TestListEntryDelta(t *testing.T) {
+	tests := []struct {
+		name  string
+		batch int
+		want  []uint64
+	}{
+		{name: "single page", batch: 3, want: []uint64{2, 1, 0}},
+		{name: "multiple pages", batch: 1, want: []uint64{2, 1, 0}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: "LIST_DELTA"})
+			is.NoErr(err) // bucket creation should succeed
+
+			for _, key := range []string{"alpha", "beta", "gamma"} {
+				_, err := kv.Put(t.Context(), key, []byte(key))
+				is.NoErr(err) // list delta fixture put should succeed
+			}
+
+			deltas := make([]uint64, 0, len(test.want))
+			for entry, err := range kv.List(t.Context(), ">", nkv.WithListBatch(test.batch)) {
+				is.NoErr(err) // list delta iteration should not fail
+				deltas = append(deltas, entry.Delta)
+			}
+			is.Equal(deltas, test.want) // delta should count entries remaining through the stream snapshot
+		})
+	}
+}
+
 func TestListPinsSnapshotAtCallTime(t *testing.T) {
 	is := is.New(t)
 	nc := testConnection(t)
