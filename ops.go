@@ -293,8 +293,9 @@ func (b *Bucket) Delete(ctx context.Context, key string, opts ...DeleteOption) e
 	return err
 }
 
-// Purge writes a purge tombstone that rolls up (removes) all prior
-// revisions of the key. WithTTL bounds the tombstone's lifetime.
+// Purge writes a purge tombstone that rolls up (removes) all prior revisions
+// of the key. WithRevision makes it a CAS purge; WithTTL bounds the
+// tombstone's lifetime.
 func (b *Bucket) Purge(ctx context.Context, key string, opts ...PurgeOption) error {
 	if !validKey(key) {
 		return fmt.Errorf("%w: %q", ErrInvalidKey, key)
@@ -314,9 +315,15 @@ func (b *Bucket) Purge(ctx context.Context, key string, opts ...PurgeOption) err
 	applyUserHeaders(msg, o.headers)
 	msg.Header.Set(hdrOperation, opPurge)
 	msg.Header.Set(hdrRollup, rollupSub)
+	if o.expectedRevision > 0 {
+		msg.Header.Set(hdrExpectedSeq, strconv.FormatUint(o.expectedRevision, 10))
+	}
 	ttlHeader(msg.Header, o.ttl)
 
 	_, err := b.publish(ctx, msg)
+	if isWrongLastSequence(err) {
+		return fmt.Errorf("%w: key %q at revision != %d", ErrRevisionMismatch, key, o.expectedRevision)
+	}
 
 	return err
 }
