@@ -7,11 +7,11 @@ NATS, creating a compatible bucket, and working with an `nkv.Entry`.
 ## What it demonstrates
 
 - `nkv.CreateBucket` creates or configures the JetStream stream backing a KV
-	bucket.
+  bucket.
 - `Bucket.Put` accepts a `[]byte` value and returns its stream revision.
 - `Bucket.Get` returns the value together with revision and timestamp metadata.
 - `Bucket.Delete` writes a tombstone, after which `Get` returns
-	`nkv.ErrKeyNotFound`.
+  `nkv.ErrKeyNotFound`.
 
 ## Run it
 
@@ -53,5 +53,5 @@ stop the server and remove `/tmp/nkv-getting-started` when finished.
 
 - Put a second key and compare its revision with the first.
 - Print `entry.Created` and `entry.Operation` from the returned `nkv.Entry`.
-- Replace `Delete` with `Purge` and inspect the operation through a watch or
-	`List` with `nkv.WithDeletes()`.
+- Write a purge through another NATS client, then inspect the `OpPurge` entry
+  through a watch or `List` with `nkv.WithDeletes()`.

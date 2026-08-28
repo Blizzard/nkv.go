@@ -37,12 +37,6 @@ type deleteOpts struct {
 	headers          nats.Header
 }
 
-type purgeOpts struct {
-	ttl              time.Duration
-	expectedRevision uint64
-	headers          nats.Header
-}
-
 type listOpts struct {
 	batch          int
 	includeDeletes bool
@@ -82,11 +76,6 @@ type DeleteOption interface {
 	applyDelete(o *deleteOpts)
 }
 
-// PurgeOption configures Purge.
-type PurgeOption interface {
-	applyPurge(o *purgeOpts)
-}
-
 // ListOption configures List.
 type ListOption interface {
 	applyList(o *listOpts)
@@ -102,7 +91,7 @@ type WatchOption interface {
 	applyWatch(o *watchOpts)
 }
 
-// TTL applies to Put, Create, Update, Delete (tombstone) and Purge.
+// TTL applies to Put, Create, Update, and Delete tombstones.
 
 type ttlOption time.Duration
 
@@ -123,14 +112,11 @@ func (t ttlOption) applyDelete(o *deleteOpts) {
 	o.ttlSet = true
 }
 
-func (t ttlOption) applyPurge(o *purgeOpts) {
-	o.ttl = time.Duration(t)
-}
-
-// WithTTL sets a per-key TTL (Nats-TTL) on the written revision. On
-// Delete/Purge it bounds the tombstone's lifetime. Zero disables TTL; positive
-// values must be at least one second. Requires AllowMsgTTL on the bucket (set
-// by CreateBucket and required by Open).
+// WithTTL sets a per-key TTL (Nats-TTL) on the written revision. Delete and
+// defaults to the bucket's SubjectDeleteMarkerTTL when this option is absent.
+// Zero explicitly disables TTL; positive values must be at least one
+// second. Requires AllowMsgTTL on the bucket (set by CreateBucket and required
+// by Open).
 func WithTTL(d time.Duration) ttlOption {
 	return ttlOption(d)
 }
@@ -155,17 +141,13 @@ func (r revisionOption) applyDelete(o *deleteOpts) {
 	o.expectedRevision = uint64(r)
 }
 
-func (r revisionOption) applyPurge(o *purgeOpts) {
-	o.expectedRevision = uint64(r)
-}
-
 func (r revisionOption) applyWatch(o *watchOpts) {
 	o.revision = uint64(r)
 }
 
 // WithRevision targets a specific revision. On Get it fetches that exact
-// revision; on Delete and Purge it makes the operation conditional on the
-// key's latest revision matching; on Watch it resumes inclusively from that
+// revision; on Delete it makes the operation conditional on the key's latest
+// revision matching; on Watch it resumes inclusively from that
 // stream revision.
 func WithRevision(rev uint64) revisionOption {
 	return revisionOption(rev)
@@ -300,10 +282,6 @@ func (ho headersOption) applyUpdate(o *updateOpts) {
 }
 
 func (ho headersOption) applyDelete(o *deleteOpts) {
-	o.headers = mergeHeaders(o.headers, ho.h)
-}
-
-func (ho headersOption) applyPurge(o *purgeOpts) {
 	o.headers = mergeHeaders(o.headers, ho.h)
 }
 

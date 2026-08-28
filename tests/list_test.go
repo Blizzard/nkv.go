@@ -97,8 +97,8 @@ func TestListTombstones(t *testing.T) {
 		_, err := kv.Put(t.Context(), key, []byte(key+"-value"))
 		is.NoErr(err) // tombstone fixture put should succeed
 	}
-	is.NoErr(kv.Delete(t.Context(), "deleted")) // delete fixture should succeed
-	is.NoErr(kv.Purge(t.Context(), "purged"))   // purge fixture should succeed
+	is.NoErr(kv.Delete(t.Context(), "deleted"))                   // delete fixture should succeed
+	is.NoErr(standardPurge(t.Context(), nc, kv.Name(), "purged")) // external purge fixture should succeed
 
 	keys := make([]string, 0)
 	for key, err := range kv.Keys(t.Context(), ">") {

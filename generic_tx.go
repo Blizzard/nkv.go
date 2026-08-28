@@ -110,11 +110,6 @@ func (g *GenericTx[T]) Delete(key string, opts ...DeleteOption) error {
 	return g.tx.Delete(g.prefix+key, opts...)
 }
 
-// Purge stages a purge (rollup) tombstone.
-func (g *GenericTx[T]) Purge(key string) error {
-	return g.tx.Purge(g.prefix + key)
-}
-
 // Len returns the number of staged operations.
 func (g *GenericTx[T]) Len() int {
 	return g.tx.Len()

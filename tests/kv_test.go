@@ -107,9 +107,6 @@ func TestKeyValueInvalidKeys(t *testing.T) {
 		{name: "delete", run: func(ctx context.Context, kv *nkv.Bucket) error {
 			return kv.Delete(ctx, ".invalid")
 		}},
-		{name: "purge", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			return kv.Purge(ctx, ".invalid")
-		}},
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

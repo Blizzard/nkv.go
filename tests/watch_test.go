@@ -279,7 +279,7 @@ func TestWatchOperations(t *testing.T) {
 			return kv.Create(ctx, "key", []byte("create"))
 		}, wantOperation: nkv.OpPut, wantValue: "create"},
 		{name: "purge", run: func(ctx context.Context) (uint64, error) {
-			if err := kv.Purge(ctx, "key"); err != nil {
+			if err := standardPurge(ctx, nc, kv.Name(), "key"); err != nil {
 				return 0, err
 			}
 			return 4, nil

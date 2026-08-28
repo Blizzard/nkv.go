@@ -29,7 +29,6 @@ const (
 	batchCreate
 	batchUpdate
 	batchDelete
-	batchPurge
 )
 
 // txIDBytes is the length of the random Nats-Batch-Id, hex encoded on the wire.
@@ -76,10 +75,12 @@ type TxResult struct {
 // TxOption configures a Tx.
 type TxOption func(*Tx)
 
-// WithTxTTL sets the TTL for all messages in the tx. Values below 1s
-// are clamped to 1s (NATS server minimum). Zero or negative disables TTL.
+// WithTxTTL sets the TTL for all messages in the tx. Values below 1s are
+// clamped to 1s (NATS server minimum). Zero or negative explicitly disables
+// TTL, including the SubjectDeleteMarkerTTL fallback for tombstones.
 func WithTxTTL(ttl time.Duration) TxOption {
 	return func(tx *Tx) {
+		tx.ttlSet = true
 		if ttl <= 0 {
 			tx.ttl = 0
 
@@ -101,11 +102,12 @@ func (b *Bucket) Tx(opts ...TxOption) *Tx {
 	_, _ = rand.Read(id)
 
 	tx := &Tx{
-		nc:   b.nc,
-		js:   b.js,
-		pre:  b.prefix,
-		id:   hex.EncodeToString(id),
-		keys: make(map[string]struct{}),
+		nc:        b.nc,
+		js:        b.js,
+		pre:       b.prefix,
+		id:        hex.EncodeToString(id),
+		keys:      make(map[string]struct{}),
+		markerTTL: b.markerTTL,
 	}
 
 	for _, opt := range opts {
@@ -116,14 +118,16 @@ func (b *Bucket) Tx(opts ...TxOption) *Tx {
 }
 
 type Tx struct {
-	nc     *nats.Conn
-	js     jetstream.JetStream
-	pre    string
-	id     string
-	ops    []batchOp
-	keys   map[string]struct{}
-	ttl    time.Duration
-	closed bool
+	nc        *nats.Conn
+	js        jetstream.JetStream
+	pre       string
+	id        string
+	ops       []batchOp
+	keys      map[string]struct{}
+	ttl       time.Duration
+	ttlSet    bool
+	markerTTL time.Duration
+	closed    bool
 }
 
 // Put stages an unconditional put.
@@ -182,17 +186,6 @@ func (tx *Tx) Delete(key string, opts ...DeleteOption) error {
 		kind:     batchDelete,
 		revision: o.expectedRevision,
 	})
-
-	return nil
-}
-
-// Purge stages a purge (rollup) tombstone.
-func (tx *Tx) Purge(key string) error {
-	if err := tx.reserveKey(key); err != nil {
-		return err
-	}
-
-	tx.ops = append(tx.ops, batchOp{key: key, kind: batchPurge})
 
 	return nil
 }
@@ -271,20 +264,25 @@ func (tx *Tx) buildMsg(i int, op batchOp) *nats.Msg {
 			msg.Header.Set(hdrExpectedSeq, strconv.FormatUint(op.revision, 10))
 		}
 
-	case batchPurge:
-		msg.Header.Set(hdrOperation, opPurge)
-		msg.Header.Set(hdrRollup, rollupSub)
-		msg.Data = nil
-
 	case batchPut:
 		// No additional headers.
 	}
 
+	var ttl time.Duration
 	switch {
 	case op.ttlSet:
-		ttlHeader(msg.Header, op.ttl)
-	case tx.ttl > 0:
-		msg.Header.Set(hdrMsgTTL, tx.ttl.String())
+		ttl = op.ttl
+	case tx.ttlSet:
+		ttl = tx.ttl
+	case op.kind == batchDelete:
+		ttl = tx.markerTTL
+	}
+
+	switch op.kind {
+	case batchDelete:
+		tombstoneTTLHeader(msg.Header, ttl, markerReasonKVDelete)
+	case batchPut, batchCreate, batchUpdate:
+		ttlHeader(msg.Header, ttl)
 	}
 
 	return msg

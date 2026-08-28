@@ -104,6 +104,13 @@ func ttlHeader(h nats.Header, ttl interface{ String() string }) {
 	}
 }
 
+func tombstoneTTLHeader(h nats.Header, ttl interface{ String() string }, reason string) {
+	if s := ttl.String(); s != zeroTTL {
+		h.Set(hdrMsgTTL, s)
+		h.Set(hdrMarkerReason, reason)
+	}
+}
+
 // applyUserHeaders copies user-supplied headers onto a message header.
 // Called before setting KV-internal headers so those always take precedence.
 func applyUserHeaders(msg *nats.Msg, userHdrs nats.Header) {
@@ -132,6 +139,7 @@ func isReservedHeader(header string) bool {
 		hdrRollup,
 		hdrExpectedSeq,
 		hdrMsgTTL,
+		hdrMarkerReason,
 		hdrBatchID,
 		hdrBatchSequence,
 		hdrBatchCommit,
@@ -258,8 +266,8 @@ func (b *Bucket) Update(ctx context.Context, key string, value []byte, rev uint6
 }
 
 // Delete writes a delete tombstone for key; history is retained up to the
-// bucket's History limit. WithRevision makes it a CAS delete; WithTTL bounds
-// the tombstone's lifetime.
+// bucket's History limit. WithRevision makes it a CAS delete. The tombstone
+// defaults to the bucket's SubjectDeleteMarkerTTL; WithTTL overrides it.
 func (b *Bucket) Delete(ctx context.Context, key string, opts ...DeleteOption) error {
 	if !validKey(key) {
 		return fmt.Errorf("%w: %q", ErrInvalidKey, key)
@@ -283,42 +291,11 @@ func (b *Bucket) Delete(ctx context.Context, key string, opts ...DeleteOption) e
 		msg.Header.Set(hdrExpectedSeq, strconv.FormatUint(o.expectedRevision, 10))
 	}
 
-	ttlHeader(msg.Header, o.ttl)
-
-	_, err := b.publish(ctx, msg)
-	if isWrongLastSequence(err) {
-		return fmt.Errorf("%w: key %q at revision != %d", ErrRevisionMismatch, key, o.expectedRevision)
+	if o.ttlSet {
+		tombstoneTTLHeader(msg.Header, o.ttl, markerReasonKVDelete)
+	} else {
+		tombstoneTTLHeader(msg.Header, b.markerTTL, markerReasonKVDelete)
 	}
-
-	return err
-}
-
-// Purge writes a purge tombstone that rolls up (removes) all prior revisions
-// of the key. WithRevision makes it a CAS purge; WithTTL bounds the
-// tombstone's lifetime.
-func (b *Bucket) Purge(ctx context.Context, key string, opts ...PurgeOption) error {
-	if !validKey(key) {
-		return fmt.Errorf("%w: %q", ErrInvalidKey, key)
-	}
-
-	var o purgeOpts
-
-	for _, opt := range opts {
-		opt.applyPurge(&o)
-	}
-	if err := validateTTL(o.ttl); err != nil {
-		return err
-	}
-
-	msg := &nats.Msg{Subject: b.subject(key), Header: nats.Header{}}
-
-	applyUserHeaders(msg, o.headers)
-	msg.Header.Set(hdrOperation, opPurge)
-	msg.Header.Set(hdrRollup, rollupSub)
-	if o.expectedRevision > 0 {
-		msg.Header.Set(hdrExpectedSeq, strconv.FormatUint(o.expectedRevision, 10))
-	}
-	ttlHeader(msg.Header, o.ttl)
 
 	_, err := b.publish(ctx, msg)
 	if isWrongLastSequence(err) {

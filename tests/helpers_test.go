@@ -109,3 +109,16 @@ func lastRawMessage(t *testing.T, nc *nats.Conn, bucket *nkv.Bucket, key string)
 	is.NoErr(err) // raw KV message should be available
 	return message
 }
+
+func standardPurge(ctx context.Context, nc *nats.Conn, bucket, key string) error {
+	js, err := jetstream.New(nc)
+	if err != nil {
+		return err
+	}
+	standard, err := js.KeyValue(ctx, bucket)
+	if err != nil {
+		return err
+	}
+
+	return standard.Purge(ctx, key)
+}

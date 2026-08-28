@@ -260,11 +260,6 @@ func (t *Generic[T]) Delete(ctx context.Context, key string, opts ...DeleteOptio
 	return t.kv.Delete(ctx, t.prefix+key, opts...)
 }
 
-// Purge writes a purge tombstone and removes prior revisions of key.
-func (t *Generic[T]) Purge(ctx context.Context, key string, opts ...PurgeOption) error {
-	return t.kv.Purge(ctx, t.prefix+key, opts...)
-}
-
 // Watch starts a typed watcher for entries matching pattern.
 func (t *Generic[T]) Watch(ctx context.Context, pattern string, opts ...WatchOption) (*GenericWatcher[T], error) {
 	var configured watchOpts
