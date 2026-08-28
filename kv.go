@@ -1,11 +1,11 @@
 // Package nkv is a replacement for the nats.go jetstream.KeyValue client. It
 // is wire compatible with the standard KV bucket layout (stream KV_<bucket>,
-// subjects $KV.<bucket>.<key>, KV-Operation headers, rollup purges) but NOT
+// subjects $KV.<bucket>.<key>, KV-Operation headers) but NOT
 // API compatible with nats.go.
 //
 // Design goals:
 //   - every operation takes variadic options so the surface can grow
-//   - per-key TTL on Put/Create/Delete/Purge (Nats-TTL)
+//   - per-key TTL on Put/Create/Delete (Nats-TTL)
 //   - List/Keys via JetStream Direct Get (no ephemeral consumers)
 //   - Watch via pull ordered consumers (no push, native backpressure)
 //   - typed values via a generic codec wrapper instead of a []byte-only API
@@ -25,11 +25,12 @@ import (
 // Bucket is a handle to a KV bucket. It is wire compatible with buckets
 // created by nats.go's jetstream.KeyValue implementation.
 type Bucket struct {
-	nc     *nats.Conn
-	js     jetstream.JetStream
-	name   string
-	stream string
-	prefix string // "$KV.<bucket>."
+	nc        *nats.Conn
+	js        jetstream.JetStream
+	name      string
+	stream    string
+	prefix    string // "$KV.<bucket>."
+	markerTTL time.Duration
 }
 
 // Config describes a bucket on creation. Accepts a jetstream.StreamConfig
@@ -185,6 +186,7 @@ func CreateBucket(ctx context.Context, nc *nats.Conn, cfg Config) (*Bucket, erro
 	if _, err := b.js.CreateOrUpdateStream(ctx, sc); err != nil {
 		return nil, fmt.Errorf("kv: create bucket %q: %w", cfg.Bucket, err)
 	}
+	b.markerTTL = sc.SubjectDeleteMarkerTTL
 
 	return b, nil
 }
@@ -248,6 +250,7 @@ func Open(ctx context.Context, nc *nats.Conn, bucket string) (*Bucket, error) {
 	if cfg.MaxMsgsPerSubject != 1 {
 		return nil, fmt.Errorf("kv: bucket %q does not have history=1 (max_msgs_per_subject=%d)", bucket, cfg.MaxMsgsPerSubject)
 	}
+	b.markerTTL = cfg.SubjectDeleteMarkerTTL
 
 	return b, nil
 }

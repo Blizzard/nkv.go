@@ -141,20 +141,6 @@ func TestNKVWriteWireFormat(t *testing.T) {
 			wantExpectedSeq: "1",
 			wantSequence:    2,
 		},
-		{
-			name:   "purge",
-			bucket: "WIRE_PURGE",
-			key:    "purge.key",
-			run: func(ctx context.Context, kv *nkv.Bucket, key string) error {
-				if _, err := kv.Put(ctx, key, []byte("before")); err != nil {
-					return err
-				}
-				return kv.Purge(ctx, key)
-			},
-			wantOperation: "PURGE",
-			wantRollup:    "sub",
-			wantSequence:  2,
-		},
 	}
 
 	for _, test := range tests {

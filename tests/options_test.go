@@ -10,6 +10,7 @@ import (
 
 	"github.com/matryer/is"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestWriteOptions(t *testing.T) {
@@ -18,6 +19,7 @@ func TestWriteOptions(t *testing.T) {
 			"Content-Type":                        []string{"application/custom"},
 			"KV-Operation":                        []string{"INVALID"},
 			"Nats-Expected-Last-Subject-Sequence": []string{"999"},
+			"Nats-Marker-Reason":                  []string{"INVALID"},
 			"Nats-TTL":                            []string{"99h"},
 			"Nats-Rollup":                         []string{"all"},
 			"X-Custom":                            []string{"one", "two"},
@@ -30,6 +32,7 @@ func TestWriteOptions(t *testing.T) {
 		key             string
 		run             func(context.Context, *nkv.Bucket, string, nats.Header) error
 		wantOperation   string
+		wantMarker      string
 		wantRollup      string
 		wantExpectedSeq string
 	}{
@@ -55,14 +58,7 @@ func TestWriteOptions(t *testing.T) {
 				return err
 			}
 			return kv.Delete(ctx, key, nkv.WithRevision(revision), nkv.WithTTL(5*time.Minute), nkv.WithHeaders(headers))
-		}, wantOperation: "DEL", wantExpectedSeq: "1"},
-		{name: "purge", bucket: "OPTIONS_PURGE", key: "purge", run: func(ctx context.Context, kv *nkv.Bucket, key string, headers nats.Header) error {
-			revision, err := kv.Put(ctx, key, []byte("before"))
-			if err != nil {
-				return err
-			}
-			return kv.Purge(ctx, key, nkv.WithRevision(revision), nkv.WithTTL(5*time.Minute), nkv.WithHeaders(headers))
-		}, wantOperation: "PURGE", wantRollup: "sub", wantExpectedSeq: "1"},
+		}, wantOperation: "DEL", wantMarker: "KV-Delete", wantExpectedSeq: "1"},
 	}
 
 	for _, test := range tests {
@@ -78,9 +74,90 @@ func TestWriteOptions(t *testing.T) {
 			is.Equal(message.Header.Values("X-Custom"), []string{"one", "two"})                       // repeated custom header values should be preserved
 			is.Equal(message.Header.Get("Nats-TTL"), "5m0s")                                          // TTL option should override a custom TTL header
 			is.Equal(message.Header.Get("KV-Operation"), test.wantOperation)                          // operation header should preserve KV semantics
+			is.Equal(message.Header.Get("Nats-Marker-Reason"), test.wantMarker)                       // expiring tombstones should be marked and user values ignored
 			is.Equal(message.Header.Get("Nats-Rollup"), test.wantRollup)                              // rollup header should preserve KV semantics
 			is.Equal(message.Header.Get("Nats-Expected-Last-Subject-Sequence"), test.wantExpectedSeq) // expected sequence should preserve KV semantics
 		})
+	}
+}
+
+func TestTombstoneTTLDefaultsToSubjectDeleteMarkerTTL(t *testing.T) {
+	tests := []struct {
+		name       string
+		bucket     string
+		reopen     bool
+		run        func(context.Context, *nkv.Bucket) error
+		wantTTL    string
+		wantMarker string
+	}{
+		{name: "delete default", bucket: "OPTIONS_DELETE_DEFAULT_TTL", run: func(ctx context.Context, kv *nkv.Bucket) error {
+			return kv.Delete(ctx, "key")
+		}, wantTTL: "2m0s", wantMarker: "KV-Delete"},
+		{name: "opened bucket default", bucket: "OPTIONS_OPEN_DEFAULT_TTL", reopen: true, run: func(ctx context.Context, kv *nkv.Bucket) error {
+			return kv.Delete(ctx, "key")
+		}, wantTTL: "2m0s", wantMarker: "KV-Delete"},
+		{name: "delete explicit zero", bucket: "OPTIONS_DELETE_ZERO_TTL", run: func(ctx context.Context, kv *nkv.Bucket) error {
+			return kv.Delete(ctx, "key", nkv.WithTTL(0))
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
+				Bucket: test.bucket,
+				StreamConfig: jetstream.StreamConfig{
+					SubjectDeleteMarkerTTL: 2 * time.Minute,
+				},
+			})
+			is.NoErr(err) // bucket creation should succeed
+			if test.reopen {
+				kv, err = nkv.Open(t.Context(), nc, test.bucket)
+				is.NoErr(err) // opened bucket should cache its configured marker TTL
+			}
+			is.NoErr(test.run(t.Context(), kv)) // tombstone write should succeed
+
+			message := lastRawMessage(t, nc, kv, "key")
+			is.Equal(message.Header.Get("Nats-TTL"), test.wantTTL)              // explicit TTL state should take precedence over the marker default
+			is.Equal(message.Header.Get("Nats-Marker-Reason"), test.wantMarker) // only expiring tombstones should identify themselves as markers
+		})
+	}
+}
+
+func TestExpiringTombstoneDoesNotCreateReplacementMarker(t *testing.T) {
+	is := is.New(t)
+	nc := testConnection(t)
+	kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
+		Bucket: "OPTIONS_TOMBSTONE_EXPIRY",
+		StreamConfig: jetstream.StreamConfig{
+			SubjectDeleteMarkerTTL: 10 * time.Second,
+		},
+	})
+	is.NoErr(err) // bucket creation should succeed
+	is.NoErr(kv.Delete(t.Context(), "key", nkv.WithTTL(time.Second)))
+
+	js, err := jetstream.New(nc)
+	is.NoErr(err) // JetStream client creation should succeed
+	stream, err := js.Stream(t.Context(), kv.Stream())
+	is.NoErr(err) // backing stream should be available
+	subject := "$KV." + kv.Name() + ".key"
+
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_, err = stream.GetLastMsgForSubject(t.Context(), subject)
+		if errors.Is(err, jetstream.ErrMsgNotFound) {
+			break
+		}
+
+		select {
+		case <-deadline.C:
+			t.Fatal("timed out waiting for tombstone to expire without a replacement marker")
+		case <-ticker.C:
+		}
 	}
 }
 
@@ -103,9 +180,6 @@ func TestInvalidWriteTTL(t *testing.T) {
 		}},
 		{name: "delete", run: func(ctx context.Context, kv *nkv.Bucket, ttl time.Duration) error {
 			return kv.Delete(ctx, "delete", nkv.WithTTL(ttl))
-		}},
-		{name: "purge", run: func(ctx context.Context, kv *nkv.Bucket, ttl time.Duration) error {
-			return kv.Purge(ctx, "purge", nkv.WithTTL(ttl))
 		}},
 	}
 

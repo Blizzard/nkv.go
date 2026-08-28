@@ -51,7 +51,7 @@ const (
 	opDel   = "DEL"
 	opPurge = "PURGE"
 
-	rollupSub = "sub"
+	markerReasonKVDelete = "KV-Delete"
 
 	statusOK       = "200"
 	statusEOB      = "204"

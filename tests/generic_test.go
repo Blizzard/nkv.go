@@ -337,7 +337,7 @@ func TestGenericKeys(t *testing.T) {
 	}
 }
 
-func TestGenericDeleteAndPurge(t *testing.T) {
+func TestGenericDelete(t *testing.T) {
 	type record struct{ Name string }
 	tests := []struct {
 		name          string
@@ -354,15 +354,6 @@ func TestGenericDeleteAndPurge(t *testing.T) {
 			},
 			wantOperation: nkv.OpDelete,
 			wantTTL:       "1m0s",
-		},
-		{
-			name:   "purge",
-			bucket: "GENERIC_PURGE",
-			run: func(ctx context.Context, typed *nkv.Generic[record], _ uint64) error {
-				return typed.Purge(ctx, "alice", nkv.WithTTL(2*time.Minute))
-			},
-			wantOperation: nkv.OpPurge,
-			wantTTL:       "2m0s",
 		},
 	}
 

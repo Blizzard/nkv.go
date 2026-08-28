@@ -16,6 +16,7 @@ linters:
     - depguard # dependency policy enforced by gomodguard_v2 below
     - err113 # sentinel-error-only policy is too rigid for a client wrapper
     - exhaustruct # every struct literal would need every field
+    - exhaustruct_v5 # replacement for exhaustruct since v2.13.0
     - gomodguard # deprecated since v2.12.0, superseded by gomodguard_v2
     - ireturn # the options API deliberately returns interfaces
     - lll # line length is a formatter concern, not a lint failure

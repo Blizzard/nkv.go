@@ -11,6 +11,7 @@ import (
 
 	"github.com/matryer/is"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestTxStagingValidationAndAbort(t *testing.T) {
@@ -27,7 +28,6 @@ func TestTxStagingValidationAndAbort(t *testing.T) {
 		{name: "create", run: func(tx *nkv.Tx) error { return tx.Create(".invalid", nil) }},
 		{name: "update", run: func(tx *nkv.Tx) error { return tx.Update(".invalid", nil, 1) }},
 		{name: "delete", run: func(tx *nkv.Tx) error { return tx.Delete(".invalid") }},
-		{name: "purge", run: func(tx *nkv.Tx) error { return tx.Purge(".invalid") }},
 	}
 	for _, test := range invalid {
 		t.Run("invalid "+test.name, func(t *testing.T) {
@@ -60,27 +60,22 @@ func TestTxCommitAllOperations(t *testing.T) {
 	nc := testConnection(t)
 	bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: "TX_COMMIT"})
 	is.NoErr(err) // bucket creation should succeed
-
 	updateRevision, err := bucket.Put(t.Context(), "update", []byte("before-update"))
 	is.NoErr(err) // update fixture put should succeed
 	deleteRevision, err := bucket.Put(t.Context(), "delete", []byte("before-delete"))
 	is.NoErr(err) // delete fixture put should succeed
-	_, err = bucket.Put(t.Context(), "purge", []byte("before-purge"))
-	is.NoErr(err) // purge fixture put should succeed
-
 	tx := bucket.Tx()
 	is.NoErr(tx.Put("put", []byte("put-value")))                          // transaction put should stage
 	is.NoErr(tx.Create("create", []byte("create-value")))                 // transaction create should stage
 	is.NoErr(tx.Update("update", []byte("after-update"), updateRevision)) // transaction update should stage
 	is.NoErr(tx.Delete("delete", nkv.WithRevision(deleteRevision)))       // transaction delete should stage
-	is.NoErr(tx.Purge("purge"))                                           // transaction purge should stage
-	is.Equal(tx.Len(), 5)                                                 // transaction should report all staged operations
+	is.Equal(tx.Len(), 4)                                                 // transaction should report all staged operations
 
 	result, err := tx.Commit(t.Context())
 	is.NoErr(err)                        // transaction commit should succeed
 	is.True(result.ID != "")             // transaction result should include an ID
-	is.Equal(result.Size, 5)             // transaction result should include its size
-	is.Equal(result.Sequence, uint64(8)) // transaction result should include the final stream sequence
+	is.Equal(result.Size, 4)             // transaction result should include its size
+	is.Equal(result.Sequence, uint64(6)) // transaction result should include the final stream sequence
 
 	values := map[string]string{
 		"put":    "put-value",
@@ -92,7 +87,7 @@ func TestTxCommitAllOperations(t *testing.T) {
 		is.NoErr(err)                       // committed live key should be retrievable
 		is.Equal(string(entry.Value), want) // committed live key should contain its staged value
 	}
-	for _, key := range []string{"delete", "purge"} {
+	for _, key := range []string{"delete"} {
 		_, err := bucket.Get(t.Context(), key)
 		is.True(errors.Is(err, nkv.ErrKeyNotFound)) // committed tombstone key should not be found
 	}
@@ -109,6 +104,7 @@ func TestTxDeleteOptions(t *testing.T) {
 		txTTL      time.Duration
 		options    []nkv.DeleteOption
 		wantTTL    string
+		wantMarker string
 		wantCustom string
 	}{
 		{
@@ -126,13 +122,15 @@ func TestTxDeleteOptions(t *testing.T) {
 				}),
 			},
 			wantTTL:    "5m0s",
+			wantMarker: "KV-Delete",
 			wantCustom: "preserved",
 		},
 		{
-			name:    "transaction TTL default",
-			bucket:  "TX_DELETE_DEFAULT_TTL",
-			txTTL:   10 * time.Minute,
-			wantTTL: "10m0s",
+			name:       "transaction TTL default",
+			bucket:     "TX_DELETE_DEFAULT_TTL",
+			txTTL:      10 * time.Minute,
+			wantTTL:    "10m0s",
+			wantMarker: "KV-Delete",
 		},
 		{
 			name:    "zero disables transaction TTL",
@@ -160,9 +158,54 @@ func TestTxDeleteOptions(t *testing.T) {
 			message := lastRawMessage(t, nc, bucket, "key")
 			is.Equal(message.Header.Get("X-Custom"), test.wantCustom)                                             // transaction delete should preserve custom headers
 			is.Equal(message.Header.Get("Nats-TTL"), test.wantTTL)                                                // per-delete TTL should override the transaction default
+			is.Equal(message.Header.Get("Nats-Marker-Reason"), test.wantMarker)                                   // only expiring deletes should identify themselves as markers
 			is.Equal(message.Header.Get("KV-Operation"), "DEL")                                                   // reserved operation header should retain delete semantics
 			is.Equal(message.Header.Get("Nats-Expected-Last-Subject-Sequence"), strconv.FormatUint(revision, 10)) // reserved revision header should retain CAS semantics
 			is.True(message.Header.Get("Nats-Batch-Id") != "invalid")                                             // reserved batch ID should not be user-controlled
+		})
+	}
+}
+
+func TestTxTombstoneTTLDefaultsToSubjectDeleteMarkerTTL(t *testing.T) {
+	tests := []struct {
+		name       string
+		bucket     string
+		txOpts     []nkv.TxOption
+		stage      func(*nkv.Tx) error
+		wantTTL    string
+		wantMarker string
+	}{
+		{name: "delete default", bucket: "TX_DELETE_MARKER_TTL", stage: func(tx *nkv.Tx) error {
+			return tx.Delete("key")
+		}, wantTTL: "2m0s", wantMarker: "KV-Delete"},
+		{name: "transaction zero disables delete default", bucket: "TX_DELETE_MARKER_ZERO", txOpts: []nkv.TxOption{nkv.WithTxTTL(0)}, stage: func(tx *nkv.Tx) error {
+			return tx.Delete("key")
+		}},
+		{name: "put has no marker default", bucket: "TX_PUT_NO_MARKER_TTL", stage: func(tx *nkv.Tx) error {
+			return tx.Put("key", []byte("value"))
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			is := is.New(t)
+			nc := testConnection(t)
+			bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
+				Bucket: test.bucket,
+				StreamConfig: jetstream.StreamConfig{
+					SubjectDeleteMarkerTTL: 2 * time.Minute,
+				},
+			})
+			is.NoErr(err) // bucket creation should succeed
+
+			tx := bucket.Tx(test.txOpts...)
+			is.NoErr(test.stage(tx)) // transaction operation should stage
+			_, err = tx.Commit(t.Context())
+			is.NoErr(err) // transaction should commit
+
+			message := lastRawMessage(t, nc, bucket, "key")
+			is.Equal(message.Header.Get("Nats-TTL"), test.wantTTL)              // transaction and operation TTLs should take precedence over the marker default
+			is.Equal(message.Header.Get("Nats-Marker-Reason"), test.wantMarker) // only expiring transactional tombstones should be marked
 		})
 	}
 }
@@ -267,7 +310,7 @@ func TestGenericTx(t *testing.T) {
 	is.Equal(users.Len(), 2)                                 // typed wrappers should share transaction length
 	result, err := users.Commit(t.Context())
 	is.NoErr(err)            // shared typed transaction should commit
-	is.Equal(result.Size, 2) // typed transaction should report both operations
+	is.Equal(result.Size, 2) // typed transaction should report all operations
 
 	typedUsers := nkv.NewGeneric[user](bucket, nkv.WithPrefix("users"))
 	typedAudits := nkv.NewGeneric[audit](bucket, nkv.WithPrefix("audit"))
@@ -280,7 +323,6 @@ func TestGenericTx(t *testing.T) {
 
 	message := lastRawMessage(t, nc, bucket, "users.alice")
 	is.Equal(message.Header.Get("Content-Type"), "application/json") // typed transaction should stamp its codec content type
-
 	inherited := typedUsers.Tx()
 	is.NoErr(inherited.Put("bob", user{Name: "Bob"})) // Generic.Tx put should stage with inherited configuration
 	_, err = inherited.Commit(t.Context())

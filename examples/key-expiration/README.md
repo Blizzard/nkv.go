@@ -51,4 +51,4 @@ wait.
 
 - Change the TTL and observe how server timing affects delivery.
 - Call `List` with `nkv.WithDeletes()` after expiration to inspect the marker.
-- Use `nkv.WithDefaultTTL` on a typed wrapper to apply one policy to its writes.
+- Use `nkv.WithDefaultTTL` on a typed wrapper to apply one policy to all its writes.

@@ -9,6 +9,7 @@ import (
 	"github.com/blizzard/nkv.go"
 
 	"github.com/matryer/is"
+	"github.com/nats-io/nats.go"
 )
 
 func TestGetRevisions(t *testing.T) {
@@ -73,20 +74,20 @@ func TestCreateEdgeCases(t *testing.T) {
 	tests := []struct {
 		name      string
 		bucket    string
-		tombstone func(context.Context, *nkv.Bucket, string) error
+		tombstone func(context.Context, *nats.Conn, *nkv.Bucket, string) error
 	}{
 		{
 			name:   "after delete",
 			bucket: "CREATE_AFTER_DELETE",
-			tombstone: func(ctx context.Context, kv *nkv.Bucket, key string) error {
+			tombstone: func(ctx context.Context, _ *nats.Conn, kv *nkv.Bucket, key string) error {
 				return kv.Delete(ctx, key)
 			},
 		},
 		{
 			name:   "after purge",
 			bucket: "CREATE_AFTER_PURGE",
-			tombstone: func(ctx context.Context, kv *nkv.Bucket, key string) error {
-				return kv.Purge(ctx, key)
+			tombstone: func(ctx context.Context, nc *nats.Conn, kv *nkv.Bucket, key string) error {
+				return standardPurge(ctx, nc, kv.Name(), key)
 			},
 		},
 	}
@@ -104,7 +105,7 @@ func TestCreateEdgeCases(t *testing.T) {
 			_, err = kv.Create(t.Context(), "key", []byte("duplicate"))
 			is.True(errors.Is(err, nkv.ErrKeyExists)) // create should reject an existing live key
 
-			is.NoErr(test.tombstone(t.Context(), kv, "key")) // tombstone operation should succeed
+			is.NoErr(test.tombstone(t.Context(), nc, kv, "key")) // tombstone operation should succeed
 			revision, err = kv.Create(t.Context(), "key", []byte("restored"))
 			is.NoErr(err)                 // create should restore a tombstoned key
 			is.Equal(revision, uint64(3)) // restored key should follow the tombstone revision
@@ -243,50 +244,6 @@ func TestDeleteEdgeCases(t *testing.T) {
 	}
 }
 
-func TestPurgeEdgeCases(t *testing.T) {
-	tests := []struct {
-		name        string
-		bucket      string
-		put         bool
-		options     []nkv.PurgeOption
-		wantErr     error
-		wantMissing bool
-	}{
-		{name: "current revision", bucket: "PURGE_CURRENT", put: true, options: []nkv.PurgeOption{nkv.WithRevision(1)}, wantMissing: true},
-		{name: "stale revision", bucket: "PURGE_STALE", put: true, options: []nkv.PurgeOption{nkv.WithRevision(2)}, wantErr: nkv.ErrRevisionMismatch},
-		{name: "missing with revision", bucket: "PURGE_MISSING_CAS", options: []nkv.PurgeOption{nkv.WithRevision(1)}, wantErr: nkv.ErrRevisionMismatch, wantMissing: true},
-		{name: "missing unconditional", bucket: "PURGE_MISSING", wantMissing: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			is := is.New(t)
-			nc := testConnection(t)
-			kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: test.bucket})
-			is.NoErr(err) // bucket creation should succeed
-			if test.put {
-				_, err = kv.Put(t.Context(), "key", []byte("value"))
-				is.NoErr(err) // test value setup should succeed
-			}
-
-			err = kv.Purge(t.Context(), "key", test.options...)
-			if test.wantErr != nil {
-				is.True(errors.Is(err, test.wantErr)) // purge should return the expected CAS error
-			} else {
-				is.NoErr(err) // valid purge should succeed
-			}
-
-			entry, getErr := kv.Get(t.Context(), "key")
-			if test.wantMissing {
-				is.True(errors.Is(getErr, nkv.ErrKeyNotFound)) // purged or absent key should not be found
-				return
-			}
-			is.NoErr(getErr)                       // failed CAS purge should preserve the key
-			is.Equal(string(entry.Value), "value") // failed CAS purge should preserve the value
-		})
-	}
-}
-
 func TestOperationsRespectCanceledContext(t *testing.T) {
 	tests := []struct {
 		name string
@@ -310,9 +267,6 @@ func TestOperationsRespectCanceledContext(t *testing.T) {
 		}},
 		{name: "delete", run: func(ctx context.Context, kv *nkv.Bucket) error {
 			return kv.Delete(ctx, "delete")
-		}},
-		{name: "purge", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			return kv.Purge(ctx, "purge")
 		}},
 	}
 

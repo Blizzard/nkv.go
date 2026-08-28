@@ -14,16 +14,19 @@ writes, and an API with per-operation options and typed values.
 
 It is a deliberate alternative to the [`nats.go`][nats-go] `jetstream.KeyValue` client, not a
 drop-in replacement. The stream layout (`KV_<bucket>`), subjects
-(`$KV.<bucket>.<key>`), `KV-Operation` headers, and rollup purges remain compatible;
-the public method signatures do not.
+(`$KV.<bucket>.<key>`), and `KV-Operation` headers remain compatible. Rollup purges
+written by other clients are recognized as `OpPurge`; the public method signatures do not.
 
-**Installation**
+`nkv` does not expose a purge write operation. Buckets enforce a history of one, so a
+subject rollup provides no storage benefit over `Delete`.
+
+## Installation
 
 ```bash
 go get github.com/blizzard/nkv.go@latest
 ```
 
-**Examples**
+## Examples
 
 See the [examples guide](examples/README.md) for focused, runnable programs covering
 core operations, typed JSON values, optimistic concurrency, enumeration, watches,
@@ -83,7 +86,12 @@ supports NATS Server 2.14.0 and newer.
 `CreateBucket` defaults `SubjectDeleteMarkerTTL` to one minute so TTL and max-age
 expirations remain observable long enough for watchers to receive the server-generated
 marker. Set a longer value through `Config.StreamConfig` when watchers may be disconnected
-for longer periods. Values below one second are rejected by both `nkv` and the server.
+for longer periods. `Delete` also uses this value as its tombstone TTL when `WithTTL` is
+absent. Expiring delete tombstones carry `Nats-Marker-Reason` while retaining
+`KV-Operation`, so the server removes them without generating a second marker. `WithTTL(0)`
+explicitly keeps a tombstone indefinitely and omits the marker reason. Transactions follow
+the same rule, with `WithTxTTL` taking precedence. Values below one second are rejected by
+both `nkv` and the server.
 
 ### External stream creation requirements
 
