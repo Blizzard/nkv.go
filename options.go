@@ -112,7 +112,7 @@ func (t ttlOption) applyDelete(o *deleteOpts) {
 	o.ttlSet = true
 }
 
-// WithTTL sets a per-key TTL (Nats-TTL) on the written revision. Delete and
+// WithTTL sets a per-key TTL (Nats-TTL) on the written revision. Delete
 // defaults to the bucket's SubjectDeleteMarkerTTL when this option is absent.
 // Zero explicitly disables TTL; positive values must be at least one
 // second. Requires AllowMsgTTL on the bucket (set by CreateBucket and required
