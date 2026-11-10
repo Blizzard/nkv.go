@@ -178,7 +178,11 @@ func (b *Bucket) Put(ctx context.Context, key string, value []byte, opts ...PutO
 func isWrongLastSequence(err error) bool {
 	var apiErr *jetstream.APIError
 
-	return errors.As(err, &apiErr) && apiErr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence
+	// Replicated streams can reject an in-flight CAS expectation with 10164
+	// instead of the stored-sequence mismatch code 10071.
+	return errors.As(err, &apiErr) &&
+		(apiErr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence ||
+			apiErr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequenceConstant)
 }
 
 // Create stores a value only if the key does not currently exist (or its

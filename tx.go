@@ -295,7 +295,7 @@ func (tx *Tx) commitFinal(ctx context.Context, msg *nats.Msg, op batchOp) (*TxRe
 
 	pa, err := tx.js.PublishMsg(ctx, msg)
 	if err != nil {
-		if isTxWrongLastSequence(err) {
+		if isWrongLastSequence(err) {
 			return nil, fmt.Errorf("%w: key %s: %w", ErrTxConflict, op.key, err)
 		}
 
@@ -356,10 +356,4 @@ func (tx *Tx) reserveKey(key string) error {
 	tx.keys[key] = struct{}{}
 
 	return nil
-}
-
-func isTxWrongLastSequence(err error) bool {
-	var apiErr *jetstream.APIError
-
-	return errors.As(err, &apiErr) && apiErr.ErrorCode == 10071
 }
