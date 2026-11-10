@@ -9,7 +9,6 @@ import (
 	"github.com/blizzard/nkv.go"
 
 	"github.com/matryer/is"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestKeyValueBasics(t *testing.T) {
@@ -19,11 +18,9 @@ func TestKeyValueBasics(t *testing.T) {
 	nc := testConnection(t)
 
 	kv, err := nkv.CreateBucket(ctx, nc, nkv.Config{
-		Bucket: "TEST",
-		StreamConfig: jetstream.StreamConfig{
-			MaxAge:   time.Hour,
-			Metadata: map[string]string{"foo": "bar"},
-		},
+		Bucket:   "TEST",
+		MaxAge:   time.Hour,
+		Metadata: map[string]string{"foo": "bar"},
 	})
 	is.NoErr(err)                    // bucket creation should succeed
 	is.Equal(kv.Name(), "TEST")      // bucket should retain its configured name

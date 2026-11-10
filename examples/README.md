@@ -23,7 +23,7 @@ the example closest to the behavior you are building.
 
 The examples require:
 
-- Go 1.26 or newer;
+- Go 1.27 or newer;
 - NATS Server 2.14.0 or newer;
 - JetStream enabled on the server.
 

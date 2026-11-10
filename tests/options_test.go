@@ -106,10 +106,8 @@ func TestTombstoneTTLDefaultsToSubjectDeleteMarkerTTL(t *testing.T) {
 			is := is.New(t)
 			nc := testConnection(t)
 			kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
-				Bucket: test.bucket,
-				StreamConfig: jetstream.StreamConfig{
-					SubjectDeleteMarkerTTL: 2 * time.Minute,
-				},
+				Bucket:                 test.bucket,
+				SubjectDeleteMarkerTTL: 2 * time.Minute,
 			})
 			is.NoErr(err) // bucket creation should succeed
 			if test.reopen {
@@ -129,10 +127,8 @@ func TestExpiringTombstoneDoesNotCreateReplacementMarker(t *testing.T) {
 	is := is.New(t)
 	nc := testConnection(t)
 	kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
-		Bucket: "OPTIONS_TOMBSTONE_EXPIRY",
-		StreamConfig: jetstream.StreamConfig{
-			SubjectDeleteMarkerTTL: 10 * time.Second,
-		},
+		Bucket:                 "OPTIONS_TOMBSTONE_EXPIRY",
+		SubjectDeleteMarkerTTL: 10 * time.Second,
 	})
 	is.NoErr(err) // bucket creation should succeed
 	is.NoErr(kv.Delete(t.Context(), "key", nkv.WithTTL(time.Second)))

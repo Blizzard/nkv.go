@@ -61,9 +61,9 @@ and the exported API becomes subject to the usual Go compatibility guarantees.
 
 | | Minimum | Why |
 | --- | --- | --- |
-| Go | 1.26 | Declared in `go.mod`. |
+| Go | 1.27 | Declared in `go.mod`. |
 | [`nats-server`][nats-server] | 2.14.0 | Supported and tested server baseline. |
-| [`nats.go`][nats-go] | v1.52.0 | Client support for the above. |
+| [`nats.go`][nats-go] | v1.55.0 | Declared in `go.mod`. |
 
 ### Required server features
 

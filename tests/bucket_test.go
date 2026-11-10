@@ -111,16 +111,14 @@ func TestCreateBucketConfig(t *testing.T) {
 	nc := testConnection(t)
 
 	kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
-		Bucket: "CONFIG",
-		StreamConfig: jetstream.StreamConfig{
-			Description:            "configured bucket",
-			Subjects:               []string{"OTHER.>"},
-			MaxAge:                 time.Hour,
-			MaxBytes:               1024,
-			Metadata:               map[string]string{"owner": "nkv"},
-			Discard:                jetstream.DiscardOld,
-			SubjectDeleteMarkerTTL: 2 * time.Minute,
-		},
+		Bucket:                 "CONFIG",
+		Description:            "configured bucket",
+		Subjects:               []string{"OTHER.>"},
+		MaxAge:                 time.Hour,
+		MaxBytes:               1024,
+		Metadata:               map[string]string{"owner": "nkv"},
+		Discard:                jetstream.DiscardOld,
+		SubjectDeleteMarkerTTL: 2 * time.Minute,
 	})
 	is.NoErr(err) // bucket creation with supported settings should succeed
 
@@ -165,14 +163,14 @@ func TestCreateBucketUpdatesExistingBucket(t *testing.T) {
 	nc := testConnection(t)
 
 	_, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
-		Bucket:       "UPDATE",
-		StreamConfig: jetstream.StreamConfig{Description: "before"},
+		Bucket:      "UPDATE",
+		Description: "before",
 	})
 	is.NoErr(err) // initial bucket creation should succeed
 
 	kv, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
-		Bucket:       "UPDATE",
-		StreamConfig: jetstream.StreamConfig{Description: "after"},
+		Bucket:      "UPDATE",
+		Description: "after",
 	})
 	is.NoErr(err) // creating an existing bucket should update it
 
