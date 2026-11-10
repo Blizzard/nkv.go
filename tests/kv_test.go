@@ -3,6 +3,7 @@ package nkv_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -83,39 +84,53 @@ func TestKeyValueBasics(t *testing.T) {
 func TestKeyValueInvalidKeys(t *testing.T) {
 	tests := []struct {
 		name string
-		run  func(context.Context, *nkv.Bucket) error
+		run  func(context.Context, *nkv.Bucket, string) error
 	}{
-		{name: "put", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			_, err := kv.Put(ctx, ".invalid", []byte("value"))
+		{name: "put", run: func(ctx context.Context, kv *nkv.Bucket, key string) error {
+			_, err := kv.Put(ctx, key, []byte("value"))
+
 			return err
 		}},
-		{name: "get", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			_, err := kv.Get(ctx, ".invalid")
+		{name: "get", run: func(ctx context.Context, kv *nkv.Bucket, key string) error {
+			_, err := kv.Get(ctx, key)
+
 			return err
 		}},
-		{name: "create", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			_, err := kv.Create(ctx, ".invalid", []byte("value"))
+		{name: "create", run: func(ctx context.Context, kv *nkv.Bucket, key string) error {
+			_, err := kv.Create(ctx, key, []byte("value"))
+
 			return err
 		}},
-		{name: "update", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			_, err := kv.Update(ctx, ".invalid", []byte("value"), 1)
+		{name: "update", run: func(ctx context.Context, kv *nkv.Bucket, key string) error {
+			_, err := kv.Update(ctx, key, []byte("value"), 1)
+
 			return err
 		}},
-		{name: "delete", run: func(ctx context.Context, kv *nkv.Bucket) error {
-			return kv.Delete(ctx, ".invalid")
+		{name: "delete", run: func(ctx context.Context, kv *nkv.Bucket, key string) error {
+			return kv.Delete(ctx, key)
 		}},
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	t.Cleanup(cancel)
+
 	nc := testConnection(t)
 	kv, err := nkv.CreateBucket(ctx, nc, nkv.Config{Bucket: "INVALID_KEYS"})
 	is.New(t).NoErr(err) // bucket creation should succeed
 
+	// Invalid input must be rejected locally, even without a usable connection.
+	nc.Close()
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			is := is.New(t)
-			is.True(errors.Is(test.run(ctx, kv), nkv.ErrInvalidKey)) // operation should reject an invalid key
+			for _, key := range []string{"", ".invalid", "invalid.", "users..tom", "users.*", "bad key"} {
+				t.Run(fmt.Sprintf("%q", key), func(t *testing.T) {
+					is := is.New(t)
+
+					err := test.run(ctx, kv, key)
+					is.True(errors.Is(err, nkv.ErrInvalidKey)) // operation should reject invalid keys before using the connection
+				})
+			}
 		})
 	}
 }

@@ -77,7 +77,26 @@ var (
 )
 
 func validKey(key string) bool {
-	return validKeyRe.MatchString(key) && !strings.HasPrefix(key, ".") && !strings.HasSuffix(key, ".")
+	return validKeyRe.MatchString(key) &&
+		!strings.HasPrefix(key, ".") &&
+		!strings.HasSuffix(key, ".") &&
+		!strings.Contains(key, "..")
+}
+
+func validKeyPattern(pattern string) bool {
+	tokens := strings.Split(pattern, ".")
+
+	for i, token := range tokens {
+		if token == ">" {
+			return i == len(tokens)-1
+		}
+
+		if token != "*" && !validKey(token) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func streamName(bucket string) string {
