@@ -39,6 +39,9 @@ type Watcher struct {
 	pending     uint64
 	received    uint64
 	cancel      context.CancelFunc
+	contextErr  func() error // parent context only; Stop cancels the internal context
+	terminated  bool
+	err         error
 	done        <-chan struct{}
 	stopOnce    sync.Once
 	updatesOnce sync.Once
@@ -131,14 +134,15 @@ func (b *Bucket) Watch(ctx context.Context, pattern string, opts ...WatchOption)
 	}
 
 	w := &Watcher{
-		bucket:   b,
-		cons:     cons,
-		iter:     iter,
-		initial:  !o.updatesOnly && initialPending > 0,
-		sentinel: !o.updatesOnly && initialPending == 0,
-		pending:  initialPending,
-		cancel:   cancel,
-		done:     cctx.Done(),
+		bucket:     b,
+		cons:       cons,
+		iter:       iter,
+		initial:    !o.updatesOnly && initialPending > 0,
+		sentinel:   !o.updatesOnly && initialPending == 0,
+		pending:    initialPending,
+		cancel:     cancel,
+		contextErr: ctx.Err,
+		done:       cctx.Done(),
 	}
 
 	go func() {
@@ -154,6 +158,8 @@ func (b *Bucket) Watch(ctx context.Context, pattern string, opts ...WatchOption)
 // once the initial replay is complete (sentinel) — subsequent calls deliver
 // live updates. Returns an error on context cancellation or unrecoverable
 // consumer failure.
+// Errors returned directly by Next are not retained by Err. Use the returned
+// error when iterating directly; a later Next call may still succeed.
 func (w *Watcher) Next() (*Entry, error) {
 	w.nextMu.Lock()
 	defer w.nextMu.Unlock()
@@ -219,9 +225,28 @@ func (w *Watcher) InitialDone() bool {
 	return !w.initial
 }
 
-// Stop tears down the watcher and its underlying consumer.
+// Err reports the error that ended Updates, or the watch context's cancellation
+// or deadline error after shutdown. It returns nil before termination and after
+// an explicit Stop with an active watch context. Cleanup does not overwrite a
+// recorded failure. The original error chain is preserved for errors.Is and
+// errors.As. Err is safe to call concurrently with all watcher methods.
+//
+// Errors returned directly by Next are not retained. The initial-replay nil
+// entry is not a failure and does not change Err.
+func (w *Watcher) Err() error {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
+
+	return w.err
+}
+
+// Stop tears down the watcher and its underlying consumer. An explicit stop
+// with an active watch context leaves Err nil unless a failure is already
+// recorded. If the watch context has ended, Err retains its cancellation or
+// deadline error instead. Stop does not wait for Updates to close.
 func (w *Watcher) Stop() {
 	w.stopOnce.Do(func() {
+		w.finish(nil)
 		w.iter.Stop()
 		w.cancel()
 	})
@@ -236,6 +261,9 @@ func (b *Bucket) WatchAll(ctx context.Context, opts ...WatchOption) (*Watcher, e
 // that prefer channel semantics. Repeated calls return the same channel. The
 // channel closes when the watcher is stopped or the context is canceled. A nil
 // *Entry signals end of initial replay.
+// The channel also closes on any Next error, which is retained by Err before
+// closure. Call Stop even after the channel closes. Do not mix Updates
+// consumption with calls to Next.
 func (w *Watcher) Updates() <-chan *Entry {
 	w.updatesOnce.Do(func() {
 		w.updates = make(chan *Entry, updatesChanBuffer)
@@ -246,12 +274,14 @@ func (w *Watcher) Updates() <-chan *Entry {
 			for {
 				entry, err := w.Next()
 				if err != nil {
+					w.finish(err)
 					return
 				}
 
 				select {
 				case w.updates <- entry:
 				case <-w.done:
+					w.finish(nil)
 					return
 				}
 			}
@@ -259,6 +289,36 @@ func (w *Watcher) Updates() <-chan *Entry {
 	})
 
 	return w.updates
+}
+
+// finish records the first termination cause. Parent cancellation takes
+// precedence over the iterator-closed error produced by context shutdown.
+func (w *Watcher) finish(err error) {
+	w.stateMu.Lock()
+	defer w.stateMu.Unlock()
+
+	if !w.terminated {
+		if contextErr := w.contextErr(); contextErr != nil {
+			err = contextErr
+		}
+		w.err = err
+		w.terminated = true
+	}
+}
+
+// terminationError lets the typed adapter distinguish an explicit stop from
+// an unexpected iterator closure without retaining recoverable decode errors.
+func (w *Watcher) terminationError(err error) error {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
+
+	if w.terminated {
+		return w.err
+	}
+	if contextErr := w.contextErr(); contextErr != nil {
+		return contextErr
+	}
+	return err
 }
 
 // entryFromJSMsg decodes a consumed stream message (watch path) into an Entry.

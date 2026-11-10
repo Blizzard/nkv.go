@@ -2,6 +2,7 @@ package nkv_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -125,11 +126,13 @@ func TestStoreWatchDecodeErrors(t *testing.T) {
 	is.NoErr(err) // watcher should start before decoding entries
 	t.Cleanup(watcher.Stop)
 	entry, err := watcher.Next()
-	is.True(err != nil)   // incompatible data should fail at delivery time
-	is.True(entry == nil) // decode failures should not return partially decoded entries
+	is.True(err != nil)     // incompatible data should fail at delivery time
+	is.True(entry == nil)   // decode failures should not return partially decoded entries
+	is.NoErr(watcher.Err()) // recoverable direct errors should not terminate the watcher
 	entry, err = watcher.Next()
 	is.NoErr(err)             // Next should continue after a decode failure
 	is.Equal(entry.Value, 42) // the next compatible entry should be decoded
+	is.NoErr(watcher.Err())   // successful direct iteration should leave Err nil
 	entry, err = watcher.Next()
 	is.NoErr(err)                  // initial replay should still terminate normally
 	is.True(entry == nil)          // the replay sentinel should follow consumed entries
@@ -178,6 +181,8 @@ func TestStoreWatchUpdates(t *testing.T) {
 			case entry, open := <-updates:
 				if test.bad {
 					is.True(!open) // decode errors should close the channel
+					var decodeErr *json.UnmarshalTypeError
+					is.True(errors.As(watcher.Err(), &decodeErr)) // the original decoding error should remain inspectable
 				} else {
 					is.True(open && entry != nil) // compatible live values should be delivered
 					is.Equal(entry.Value, 42)     // live channel values should be decoded
@@ -185,13 +190,17 @@ func TestStoreWatchUpdates(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("timed out waiting for live update")
 			}
+			streamErr := watcher.Err()
 			watcher.Stop()
+			is.Equal(watcher.Err(), streamErr) // stopping must not overwrite an adapter failure
 			select {
 			case _, open := <-updates:
 				is.True(!open) // stopping should close the adapter
 			case <-ctx.Done():
 				t.Fatal("timed out waiting for channel close")
 			}
+			cancel()
+			is.Equal(watcher.Err(), streamErr) // context cleanup must preserve the adapter result
 		})
 	}
 }
