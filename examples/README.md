@@ -11,7 +11,7 @@ the example closest to the behavior you are building.
 | Example | Focus |
 | --- | --- |
 | [getting-started](getting-started/) | Create a bucket and put, get, and delete a byte value |
-| [typed-json](typed-json/) | Encode and decode Go structs with `Generic[T]` |
+| [typed-json](typed-json/) | Encode and decode Go structs with Store's generic accessors |
 | [optimistic-concurrency](optimistic-concurrency/) | Create-once and revision-based compare-and-swap |
 | [list-and-keys](list-and-keys/) | Enumerate live keys and tombstones with subject patterns |
 | [watch-changes](watch-changes/) | Move from an initial snapshot to live updates |

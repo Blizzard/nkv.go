@@ -243,7 +243,7 @@ func (tx *Tx) buildMsg(i int, op batchOp) *nats.Msg {
 		Header:  nats.Header{},
 	}
 
-	// Apply per-op headers (e.g. Content-Type from GenericTx).
+	// Apply per-op headers (e.g. Content-Type from StoreTx).
 	applyUserHeaders(msg, op.headers)
 
 	msg.Header.Set(hdrBatchID, tx.id)

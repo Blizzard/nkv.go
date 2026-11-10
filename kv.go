@@ -8,7 +8,7 @@
 //   - per-key TTL on Put/Create/Delete (Nats-TTL)
 //   - List/Keys via JetStream Direct Get (no ephemeral consumers)
 //   - Watch via pull ordered consumers (no push, native backpressure)
-//   - typed values via a generic codec wrapper instead of a []byte-only API
+//   - typed values via Store's generic accessors over the byte-oriented API
 package nkv
 
 import (

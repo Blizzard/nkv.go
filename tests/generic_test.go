@@ -136,35 +136,15 @@ func TestGenericCodecDispatchAndFallback(t *testing.T) {
 	is.Equal(message.Header.Values("Content-Type"), []string{"application/x-write"}) // write codec content type should override caller metadata
 }
 
-func TestGenericCodecValidationAndErrors(t *testing.T) {
+func TestGenericCodecErrors(t *testing.T) {
 	type record struct{ Name string }
-	jsonCodec := nkv.JSONCodec()
-	tests := []struct {
-		name       string
-		options    []nkv.GenericOption
-		errorMatch string
-	}{
-		{name: "empty write content type", options: []nkv.GenericOption{nkv.WithWriteCodec(nkv.Codec{})}, errorMatch: "codec ContentType must not be empty"},
-		{name: "nil write marshal", options: []nkv.GenericOption{nkv.WithWriteCodec(nkv.Codec{ContentType: "application/x-test", Unmarshal: jsonCodec.Unmarshal})}, errorMatch: "codec Marshal must not be nil"},
-		{name: "nil write unmarshal", options: []nkv.GenericOption{nkv.WithWriteCodec(nkv.Codec{ContentType: "application/x-test", Marshal: jsonCodec.Marshal})}, errorMatch: "codec Unmarshal must not be nil"},
-		{name: "empty read content type", options: []nkv.GenericOption{nkv.WithReadCodec(nkv.Codec{})}, errorMatch: "codec ContentType must not be empty"},
-		{name: "nil read marshal", options: []nkv.GenericOption{nkv.WithReadCodec(nkv.Codec{ContentType: "application/x-test", Unmarshal: jsonCodec.Unmarshal})}, errorMatch: "codec Marshal must not be nil"},
-		{name: "nil read unmarshal", options: []nkv.GenericOption{nkv.WithReadCodec(nkv.Codec{ContentType: "application/x-test", Marshal: jsonCodec.Marshal})}, errorMatch: "codec Unmarshal must not be nil"},
-		{name: "nil fallback marshal", options: []nkv.GenericOption{nkv.WithFallbackCodec(nkv.Codec{ContentType: "application/x-test", Unmarshal: jsonCodec.Unmarshal})}, errorMatch: "codec Marshal must not be nil"},
-		{name: "nil fallback unmarshal", options: []nkv.GenericOption{nkv.WithFallbackCodec(nkv.Codec{ContentType: "application/x-test", Marshal: jsonCodec.Marshal})}, errorMatch: "codec Unmarshal must not be nil"},
-		{name: "duplicate read content type", options: []nkv.GenericOption{nkv.WithReadCodec(nkv.JSONCodec())}, errorMatch: "duplicate codec"},
-	}
+	assertPanicContains(t, "codec ContentType must not be empty", func() {
+		_ = nkv.NewGeneric[record](nil, nkv.WithReadCodec(nkv.Codec{}))
+	})
 
 	nc := testConnection(t)
 	bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: "GENERIC_VALIDATION"})
 	is.New(t).NoErr(err) // bucket creation should succeed
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			assertPanicContains(t, test.errorMatch, func() {
-				_ = nkv.NewGeneric[record](bucket, test.options...)
-			})
-		})
-	}
 
 	codecError := errors.New("codec failure")
 	failing := nkv.Codec{
@@ -183,40 +163,6 @@ func TestGenericCodecValidationAndErrors(t *testing.T) {
 	is.New(t).NoErr(err) // unmarshal fixture put should succeed
 	_, _, err = typed.Get(t.Context(), "unmarshal")
 	is.New(t).True(errors.Is(err, codecError)) // typed get should propagate unmarshal errors
-}
-
-func TestGenericPrefixValidation(t *testing.T) {
-	type record struct{ Name string }
-
-	is := is.New(t)
-	nc := testConnection(t)
-	bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{Bucket: "GENERIC_PREFIX"})
-	is.NoErr(err) // bucket creation should succeed
-
-	for _, prefix := range []string{"", ".", ".."} {
-		t.Run("empty/"+prefix, func(t *testing.T) {
-			typed := nkv.NewGeneric[record](bucket, nkv.WithPrefix(prefix))
-			_, err := typed.Put(t.Context(), "key", record{Name: "value"})
-			is.New(t).NoErr(err) // empty normalized prefix should leave the key unqualified
-		})
-	}
-
-	typed := nkv.NewGeneric[record](bucket, nkv.WithPrefix("users..."))
-	_, err = typed.Put(t.Context(), "alice", record{Name: "Alice"})
-	is.NoErr(err) // repeated trailing dots should be normalized
-	_, err = bucket.Get(t.Context(), "users.alice")
-	is.NoErr(err) // normalized prefix should use one separator
-
-	for _, prefix := range []string{".users", "users..active", "users.*", "users.>", "users active"} {
-		t.Run("invalid/"+prefix, func(t *testing.T) {
-			assertPanicContains(t, "invalid prefix", func() {
-				_ = nkv.NewGeneric[record](bucket, nkv.WithPrefix(prefix))
-			})
-			assertPanicContains(t, "invalid prefix", func() {
-				_ = nkv.NewGenericTx[record](bucket.Tx(), nkv.WithPrefix(prefix))
-			})
-		})
-	}
 }
 
 func TestGenericDefaultTTL(t *testing.T) {

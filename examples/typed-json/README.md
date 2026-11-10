@@ -1,11 +1,12 @@
 # Typed JSON values
 
-This example uses `nkv.NewGeneric[T]` to store a Go struct as JSON. The typed
-wrapper handles encoding, decoding, the `Content-Type` header, and a key prefix.
+This example uses `nkv.NewStore` to store a Go struct as JSON. Store handles
+encoding, decoding, the `Content-Type` header, and a key prefix.
 
 ## What it demonstrates
 
-- `nkv.NewGeneric[User]` turns a byte-oriented bucket into a typed interface.
+- `nkv.NewStore` adds generic accessors to a byte-oriented bucket.
+- `Put` infers the value type; `Get[User]` selects the read's decode target.
 - The default `nkv.JSONCodec` uses the struct's JSON tags and records
 	`Content-Type: application/json`.
 - `nkv.WithPrefix("users")` maps the logical key `ada` to the stored key
@@ -47,6 +48,6 @@ dispatch; the value itself is still stored as bytes in the KV stream.
 
 ## Explore further
 
-- Add another `User` and iterate over `users.List(ctx, "*")`.
+- Add another `User` and iterate over `users.List[User](ctx, "*")`.
 - Use `users.Update` with the revision returned by `Get`.
 - Add `nkv.WithDefaultTTL` when creating the wrapper and observe values expire.

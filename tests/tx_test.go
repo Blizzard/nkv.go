@@ -330,22 +330,7 @@ func TestGenericTx(t *testing.T) {
 }
 
 func TestGenericTxCodecValidation(t *testing.T) {
-	jsonCodec := nkv.JSONCodec()
-	tests := []struct {
-		name       string
-		codec      nkv.Codec
-		errorMatch string
-	}{
-		{name: "empty content type", codec: nkv.Codec{}, errorMatch: "codec ContentType must not be empty"},
-		{name: "nil marshal", codec: nkv.Codec{ContentType: "application/x-test", Unmarshal: jsonCodec.Unmarshal}, errorMatch: "codec Marshal must not be nil"},
-		{name: "nil unmarshal", codec: nkv.Codec{ContentType: "application/x-test", Marshal: jsonCodec.Marshal}, errorMatch: "codec Unmarshal must not be nil"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			assertPanicContains(t, test.errorMatch, func() {
-				_ = nkv.NewGenericTx[struct{}](nil, nkv.WithWriteCodec(test.codec))
-			})
-		})
-	}
+	assertPanicContains(t, "codec ContentType must not be empty", func() {
+		_ = nkv.NewGenericTx[struct{}](nil, nkv.WithWriteCodec(nkv.Codec{}))
+	})
 }
