@@ -164,6 +164,8 @@ func (tx *Tx) Update(key string, value []byte, revision uint64) error {
 }
 
 // Delete stages a delete tombstone. WithRevision makes it CAS.
+// Stream-wide Nats-Expected-Last-Sequence and Nats-Expected-Last-Msg-Id headers
+// return ErrInvalidOption; transaction conditions must use the key-level API.
 func (tx *Tx) Delete(key string, opts ...DeleteOption) error {
 	var o deleteOpts
 
@@ -172,6 +174,15 @@ func (tx *Tx) Delete(key string, opts ...DeleteOption) error {
 	}
 	if err := validateTTL(o.ttl); err != nil {
 		return err
+	}
+
+	// Do not silently drop a caller's condition or let its position in the
+	// atomic batch determine whether the server accepts it.
+	for header := range o.headers {
+		if strings.EqualFold(header, jetstream.ExpectedLastSeqHeader) ||
+			strings.EqualFold(header, jetstream.ExpectedLastMsgIDHeader) {
+			return fmt.Errorf("%w: %s is not supported in transactions; use WithRevision for key-level CAS", ErrInvalidOption, header)
+		}
 	}
 
 	if err := tx.reserveKey(key); err != nil {
