@@ -54,4 +54,4 @@ NATS Server 2.14.0 or newer.
 
 - Replace the conflicting `Create` with a `Put` and observe the batch succeed.
 - Stage an `Update` using a stale revision to produce the same conflict class.
-- Use `Generic[T].Tx()` to atomically write typed JSON values.
+- Use `Store.Tx()` to atomically write typed JSON values, selecting a type per operation.

@@ -78,7 +78,7 @@ supports NATS Server 2.14.0 and newer.
 | Batched Direct Get | `batch`, `next_by_subj`, `up_to_seq` | `List`, `Keys` paging | 2.11.0 |
 | Per-message TTL | `AllowMsgTTL`, `Nats-TTL` | `WithTTL` | 2.11.0 |
 | Limit markers | `SubjectDeleteMarkerTTL`, `Nats-Marker-Reason` | TTL/max-age tombstone detection | 2.11.0 |
-| Atomic batch publish | `AllowAtomicPublish`, `Nats-Batch-*` | `Tx`, `GenericTx` | 2.12.0 |
+| Atomic batch publish | `AllowAtomicPublish`, `Nats-Batch-*` | `Tx`, `StoreTx`, `GenericTx` | 2.12.0 |
 
 `List` and `Keys` page through Direct Get rather than creating ephemeral consumers, and
 `Watch` uses a pull ordered consumer — neither leaves server-side state behind.

@@ -44,9 +44,9 @@ func run() error {
 		return fmt.Errorf("create bucket: %w", bucketErr)
 	}
 
-	// Generic[User] provides typed Put and Get methods. The prefix keeps this
-	// type in its own key namespace: logical key "ada" is stored as "users.ada".
-	users := nkv.NewGeneric[User](bucket, nkv.WithPrefix("users"))
+	// Store selects the value type per operation. The prefix keeps these values
+	// in their own key namespace: logical key "ada" is stored as "users.ada".
+	users := nkv.NewStore(bucket, nkv.WithPrefix("users"))
 	written := User{
 		Name:  "Ada Lovelace",
 		Email: "ada@example.com",
@@ -60,14 +60,14 @@ func run() error {
 
 	// Get decodes JSON back into User and returns the revision of the entry it
 	// read. That revision can later be supplied to a compare-and-swap Update.
-	read, readRevision, getErr := users.Get(ctx, "ada")
+	read, readRevision, getErr := users.Get[User](ctx, "ada")
 	if getErr != nil {
 		return fmt.Errorf("get user: %w", getErr)
 	}
 	log.Printf("user at revision %d: %+v", readRevision, read)
 
 	// Reading through the underlying byte-oriented bucket exposes the metadata
-	// that Generic wrote alongside the JSON payload.
+	// that Store wrote alongside the JSON payload.
 	raw, rawErr := bucket.Get(ctx, "users.ada")
 	if rawErr != nil {
 		return fmt.Errorf("get raw entry: %w", rawErr)
