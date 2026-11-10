@@ -11,7 +11,6 @@ import (
 
 	"github.com/matryer/is"
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestTxStagingValidationAndAbort(t *testing.T) {
@@ -191,10 +190,8 @@ func TestTxTombstoneTTLDefaultsToSubjectDeleteMarkerTTL(t *testing.T) {
 			is := is.New(t)
 			nc := testConnection(t)
 			bucket, err := nkv.CreateBucket(t.Context(), nc, nkv.Config{
-				Bucket: test.bucket,
-				StreamConfig: jetstream.StreamConfig{
-					SubjectDeleteMarkerTTL: 2 * time.Minute,
-				},
+				Bucket:                 test.bucket,
+				SubjectDeleteMarkerTTL: 2 * time.Minute,
 			})
 			is.NoErr(err) // bucket creation should succeed
 
