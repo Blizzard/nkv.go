@@ -89,6 +89,7 @@ func (w *StoreWatcher[T]) Err() error {
 	if w.terminated {
 		return w.err
 	}
+
 	return w.watcher.Err()
 }
 
@@ -131,6 +132,7 @@ func (w *StoreWatcher[T]) Updates() <-chan *StoreEntry[T] {
 
 				select {
 				case w.updates <- entry:
+
 				case <-w.watcher.done:
 					w.finish(nil)
 					return

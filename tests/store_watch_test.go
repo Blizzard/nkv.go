@@ -117,29 +117,37 @@ func TestStoreWatchDecodeErrors(t *testing.T) {
 	nc := testConnection(t)
 	bucket, err := nkv.CreateBucket(ctx, nc, nkv.Config{Bucket: "STORE_WATCH_ERRORS"})
 	is.NoErr(err) // bucket creation should succeed
+
 	store := nkv.NewStore(bucket)
 	_, err = bucket.Put(ctx, "bad", []byte(`"not an integer"`))
 	is.NoErr(err) // incompatible replay fixture should be written
+
 	_, err = store.Put(ctx, "good", 42)
 	is.NoErr(err) // compatible replay fixture should be written
+
 	watcher, err := store.Watch[int](ctx, "*")
 	is.NoErr(err) // watcher should start before decoding entries
 	t.Cleanup(watcher.Stop)
+
 	entry, err := watcher.Next()
 	is.True(err != nil)     // incompatible data should fail at delivery time
 	is.True(entry == nil)   // decode failures should not return partially decoded entries
 	is.NoErr(watcher.Err()) // recoverable direct errors should not terminate the watcher
+
 	entry, err = watcher.Next()
 	is.NoErr(err)             // Next should continue after a decode failure
 	is.Equal(entry.Value, 42) // the next compatible entry should be decoded
 	is.NoErr(watcher.Err())   // successful direct iteration should leave Err nil
+
 	entry, err = watcher.Next()
 	is.NoErr(err)                  // initial replay should still terminate normally
 	is.True(entry == nil)          // the replay sentinel should follow consumed entries
 	is.True(watcher.InitialDone()) // replay state should survive decode errors
+
 	watcher.Stop()
 	_, err = watcher.Next()
 	is.True(errors.Is(err, nkv.ErrWatcherStopped)) // stopped watcher errors should pass through
+
 	_, err = store.Watch[int](ctx, "*", nkv.WithPullBatch(0))
 	is.True(errors.Is(err, nkv.ErrInvalidOption)) // watch option validation should pass through
 }
@@ -159,46 +167,59 @@ func TestStoreWatchUpdates(t *testing.T) {
 			nc := testConnection(t)
 			bucket, err := nkv.CreateBucket(ctx, nc, nkv.Config{Bucket: "STORE_WATCH_UPDATES"})
 			is.NoErr(err) // bucket creation should succeed
+
 			store := nkv.NewStore(bucket)
 			watcher, err := store.Watch[int](ctx, "*")
 			is.NoErr(err) // empty watcher should start
 			t.Cleanup(watcher.Stop)
+
 			updates := watcher.Updates()
 			is.Equal(watcher.Updates(), updates) // Updates should reuse one channel
+
 			select {
 			case entry, open := <-updates:
 				is.True(open && entry == nil) // empty replay should deliver its sentinel
+
 			case <-ctx.Done():
 				t.Fatal("timed out waiting for replay sentinel")
 			}
+
 			if test.bad {
 				_, err = store.Put(ctx, "key", "not an integer")
 			} else {
 				_, err = store.Put(ctx, "key", 42)
 			}
+
 			is.NoErr(err) // live fixture should be written
+
 			select {
 			case entry, open := <-updates:
 				if test.bad {
 					is.True(!open) // decode errors should close the channel
+
 					var decodeErr *json.UnmarshalTypeError
 					is.True(errors.As(watcher.Err(), &decodeErr)) // the original decoding error should remain inspectable
 				} else {
 					is.True(open && entry != nil) // compatible live values should be delivered
 					is.Equal(entry.Value, 42)     // live channel values should be decoded
 				}
+
 			case <-ctx.Done():
 				t.Fatal("timed out waiting for live update")
 			}
+
 			streamErr := watcher.Err()
 			watcher.Stop()
 			is.Equal(watcher.Err(), streamErr) // stopping must not overwrite an adapter failure
+
 			select {
 			case _, open := <-updates:
 				is.True(!open) // stopping should close the adapter
+
 			case <-ctx.Done():
 				t.Fatal("timed out waiting for channel close")
 			}
+
 			cancel()
 			is.Equal(watcher.Err(), streamErr) // context cleanup must preserve the adapter result
 		})
@@ -230,6 +251,7 @@ func TestStoreWatchUpdatesCancellation(t *testing.T) {
 			if !open {
 				return // cancellation must unblock even a full channel adapter
 			}
+
 		case <-ctx.Done():
 			t.Fatal("timed out closing canceled Updates adapter")
 		}

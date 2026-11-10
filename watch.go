@@ -280,6 +280,7 @@ func (w *Watcher) Updates() <-chan *Entry {
 
 				select {
 				case w.updates <- entry:
+
 				case <-w.done:
 					w.finish(nil)
 					return
@@ -301,6 +302,7 @@ func (w *Watcher) finish(err error) {
 		if contextErr := w.contextErr(); contextErr != nil {
 			err = contextErr
 		}
+
 		w.err = err
 		w.terminated = true
 	}
@@ -315,9 +317,11 @@ func (w *Watcher) terminationError(err error) error {
 	if w.terminated {
 		return w.err
 	}
+
 	if contextErr := w.contextErr(); contextErr != nil {
 		return contextErr
 	}
+
 	return err
 }
 
