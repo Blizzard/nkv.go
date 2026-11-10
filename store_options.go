@@ -85,7 +85,7 @@ func normalizePrefix(prefix string) string {
 		return ""
 	}
 
-	if !validKey(normalized) || strings.Contains(normalized, "..") {
+	if !validKey(normalized) {
 		panic(fmt.Sprintf("kv: invalid prefix %q", prefix))
 	}
 

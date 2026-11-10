@@ -3,6 +3,7 @@ package nkv_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
@@ -21,19 +22,27 @@ func TestTxStagingValidationAndAbort(t *testing.T) {
 
 	invalid := []struct {
 		name string
-		run  func(*nkv.Tx) error
+		run  func(*nkv.Tx, string) error
 	}{
-		{name: "put", run: func(tx *nkv.Tx) error { return tx.Put(".invalid", nil) }},
-		{name: "create", run: func(tx *nkv.Tx) error { return tx.Create(".invalid", nil) }},
-		{name: "update", run: func(tx *nkv.Tx) error { return tx.Update(".invalid", nil, 1) }},
-		{name: "delete", run: func(tx *nkv.Tx) error { return tx.Delete(".invalid") }},
+		{name: "put", run: func(tx *nkv.Tx, key string) error { return tx.Put(key, nil) }},
+		{name: "create", run: func(tx *nkv.Tx, key string) error { return tx.Create(key, nil) }},
+		{name: "update", run: func(tx *nkv.Tx, key string) error { return tx.Update(key, nil, 1) }},
+		{name: "delete", run: func(tx *nkv.Tx, key string) error { return tx.Delete(key) }},
 	}
+
 	for _, test := range invalid {
 		t.Run("invalid "+test.name, func(t *testing.T) {
-			is := is.New(t)
-			tx := bucket.Tx()
-			is.True(errors.Is(test.run(tx), nkv.ErrInvalidKey)) // staging should reject an invalid key
-			is.Equal(tx.Len(), 0)                               // rejected operation should not change transaction length
+			for _, key := range []string{".invalid", "users..tom"} {
+				t.Run(fmt.Sprintf("%q", key), func(t *testing.T) {
+					is := is.New(t)
+					tx := bucket.Tx()
+					defer tx.Abort()
+
+					err := test.run(tx, key)
+					is.True(errors.Is(err, nkv.ErrInvalidKey)) // staging should reject an invalid key
+					is.Equal(tx.Len(), 0)                      // rejected operation should not change transaction length
+				})
+			}
 		})
 	}
 

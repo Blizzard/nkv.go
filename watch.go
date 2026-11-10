@@ -54,7 +54,15 @@ type Watcher struct {
 // The caller must call Stop when done. Unlike the nats.go KV Watch, the
 // underlying consumer is pull-based: stalls do not slow-consumer the
 // connection.
+//
+// The primary pattern and all WithAdditionalKeys patterns must be valid key
+// patterns, with wildcards occupying whole tokens and > only at the end.
+// Invalid patterns return ErrInvalidKey before any server request.
 func (b *Bucket) Watch(ctx context.Context, pattern string, opts ...WatchOption) (*Watcher, error) {
+	if !validKeyPattern(pattern) {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidKey, pattern)
+	}
+
 	o := watchOpts{
 		pullBatch: defaultPullBatch,
 		inactive:  defaultInactiveThreshold,
@@ -72,6 +80,10 @@ func (b *Bucket) Watch(ctx context.Context, pattern string, opts ...WatchOption)
 	filters = append(filters, b.subject(pattern))
 
 	for _, extra := range o.extraFilters {
+		if !validKeyPattern(extra) {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidKey, extra)
+		}
+
 		filters = append(filters, b.subject(extra))
 	}
 

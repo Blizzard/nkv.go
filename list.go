@@ -19,6 +19,8 @@ const defaultListBatch = 256
 // Uses paged next_by_subj direct get (batched stream walk). Pins to the
 // stream's last_seq at call time for a consistent snapshot. No subject
 // count limits, no consumer lifecycle.
+//
+// Invalid key patterns yield ErrInvalidKey before any server request.
 func (b *Bucket) List(ctx context.Context, pattern string, opts ...ListOption) iter.Seq2[*Entry, error] {
 	o := listOpts{batch: defaultListBatch}
 
@@ -30,6 +32,12 @@ func (b *Bucket) List(ctx context.Context, pattern string, opts ...ListOption) i
 }
 
 func (b *Bucket) list(ctx context.Context, pattern string, o listOpts) iter.Seq2[*Entry, error] {
+	if !validKeyPattern(pattern) {
+		return func(yield func(*Entry, error) bool) {
+			yield(nil, fmt.Errorf("%w: %q", ErrInvalidKey, pattern))
+		}
+	}
+
 	if err := validateListOptions(o); err != nil {
 		return func(yield func(*Entry, error) bool) {
 			yield(nil, err)
@@ -48,6 +56,7 @@ func (b *Bucket) list(ctx context.Context, pattern string, o listOpts) iter.Seq2
 
 // Keys returns an iterator over all keys matching the pattern. Tombstones
 // are skipped. A thin wrapper around List that discards values.
+// Invalid key patterns yield ErrInvalidKey before any server request.
 func (b *Bucket) Keys(ctx context.Context, pattern string, opts ...KeysOption) iter.Seq2[string, error] {
 	o := listOpts{batch: defaultListBatch}
 
