@@ -288,6 +288,8 @@ func (ho headersOption) applyDelete(o *deleteOpts) {
 // WithHeaders attaches additional NATS message headers to the write
 // operation. Headers set here will not override KV-internal headers
 // (KV-Operation, Nats-Rollup, etc.); those take precedence.
+// Tx.Delete rejects stream-wide expectations (Nats-Expected-Last-Sequence and
+// Nats-Expected-Last-Msg-Id) with ErrInvalidOption; use WithRevision for key-level CAS.
 func WithHeaders(h nats.Header) headersOption {
 	return headersOption{h: h}
 }
